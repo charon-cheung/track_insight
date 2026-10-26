@@ -1,0 +1,26 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>track_insight</name>
+  <version>0.1.0</version>
+  <description>Offline trajectory tracking analysis and interactive reports.</description>
+  <maintainer email="track-insight@example.invalid">Track Insight maintainers</maintainer>
+  <license>Apache-2.0</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <depend>rosbag2_cpp</depend>
+  <depend>rosbag2_storage</depend>
+  <exec_depend>rosbag2_storage_mcap</exec_depend>
+  <depend>rclcpp</depend>
+  <depend>ament_index_cpp</depend>
+  <depend>geometry_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>tf2_msgs</depend>
+  <depend>tf2</depend>
+  <depend>action_msgs</depend>
+  <depend>libarchive-dev</depend>
+  <depend>nlohmann-json-dev</depend>
+  <depend>yaml-cpp</depend>
+  <depend>openssl</depend>
+  <exec_depend>librsvg2-bin</exec_depend>
+  <test_depend>ament_cmake_gtest</test_depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>

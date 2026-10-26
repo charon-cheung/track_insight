@@ -1,0 +1,28 @@
+topics:
+  plan: /plan
+  command: /cmd_vel_nav
+  feedback: /dev/odometry/raw/dist
+  downstream: /ctrl/velocity/navi/clct
+frames:
+  world: map
+  base: rbs_base_link
+  command: rbs_base_link
+timing:
+  max_tf_gap_ms: 200
+  max_velocity_gap_ms: 200
+  max_command_age_ms: 200
+  max_log_age_ms: 100
+geometry:
+  max_jump_speed_mps: 5.0
+  jump_distance_m: 0.15
+  progress_window_m: 2.0
+motion:
+  stopped_linear_mps: 0.02
+  stopped_angular_radps: 0.03
+  stationary_dwell_s: 1.0
+# Set application requirements explicitly to enable threshold-based findings.
+thresholds:
+  lateral_m: null
+  velocity_mps: null
+  angular_velocity_radps: null
+  terminal_position_m: null

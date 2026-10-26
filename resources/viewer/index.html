@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; worker-src blob:; connect-src 'none'">
+<title>Track Insight · 离线跟踪分析</title><style>__TRACK_STYLE__</style><style>__TRACK_REVIEW_STYLE__</style></head>
+<body><header><div><span class="brand">Track <b>Insight</b></span><span class="tag">OFFLINE ANALYSIS</span></div><span id="runTime"></span></header>
+<div class="shell"><aside id="sidebar"><div class="asideTitle">导航与路径 <span id="pathCount"></span></div><div id="navigation"></div>
+<div class="asideTitle lower">数据说明</div><p id="evidence"></p><div id="quality"></div>
+<button id="downloadMetrics" class="wide">导出评价指标 CSV</button><p class="small">正式指标来自 C++ 分析层。图形缩放和展示抽样不会改变统计结果。</p></aside>
+<main><div class="viewToolbar">
+<div class="viewNavigation"><button id="toggleSidebar" aria-controls="sidebar" aria-expanded="true">收起导航</button><button id="previousSelection" disabled>上一项</button><select id="quickSelection" aria-label="选择导航或路径"></select><button id="nextSelection" disabled>下一项</button></div>
+<div class="viewActions"><label id="favoritePicker" hidden><select id="favoriteSelection" aria-label="星标列表"></select></label><div class="modeSwitch" role="group" aria-label="查看模式"><button id="reportMode" class="active" aria-pressed="true">报告模式</button><button id="reviewMode" aria-pressed="false">综合模式</button></div></div></div>
+<section class="titleRow"><div><div class="eyebrow">TRACKING CONTROLLER REVIEW</div><div class="selectionHeading"><div class="selectionIdentity"><h1 id="selectionTitle">轨迹复盘</h1><button id="toggleFavorite" type="button" aria-label="加入星标" aria-pressed="false" title="加入星标" disabled><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 2 L15.09 8.26 L22 9.27 L17 14.14 L18.18 21.02 L12 17.77 L5.82 21.02 L7 14.14 L2 9.27 L8.91 8.26 Z"/></svg></button></div><span id="titleEndpoints" hidden></span></div><p id="windowLabel"></p><p id="reviewWindowLabel"><span id="windowDate"></span><span id="windowClockRange"></span><span id="windowEpochRange"></span><span id="windowDuration"></span></p><p id="taskInfo" hidden></p></div><span class="badge" id="association"></span></section>
+<div id="failureBanner" hidden></div><section class="cards" id="cards"></section>
+<div id="reviewWorkspace"><div id="chartDeck">
+<section class="panel" id="trajectoryPanel"><div class="panelTitle"><h2>规划路径与实际轨迹</h2><details id="trajectoryOptions" open><summary>显示选项</summary><div class="controls">
+<label><input type="checkbox" id="showPlans" checked>规划路径</label><label><input type="checkbox" id="showActual" checked>实际轨迹</label>
+<label><input type="checkbox" id="showMarkers" checked>起终点</label><label><input type="checkbox" id="showDirections" checked>车身朝向</label>
+<label><input type="checkbox" id="multiPlans">全部版本</label><button id="resetTrajectory">重置</button><button id="exportTrajectory">PNG</button></div></details></div>
+<div id="trajectory" class="trajectory"></div><div id="candidates" hidden></div>
+<div id="playbackDock"><div class="playback"><button id="stepBack" title="后退 50 ms 并暂停" aria-label="步退 50 毫秒">步退</button><button id="play">播放</button><button id="stepForward" title="前进 50 ms 并暂停" aria-label="步进 50 毫秒">步进</button><select id="rate" aria-label="播放倍速"><option>1×</option><option>2×</option></select>
+<input id="timeline" aria-label="轨迹时间轴" type="range" min="0" max="10000" value="0" step="1"><div class="cursorLabels"><span id="cursorTime"></span><span id="cursorTimestamp"></span></div></div>
+<div id="instantReadouts" class="instantReadouts"></div><div id="cursorReadout" class="readout"></div></div></section>
+<section class="panel"><div class="panelTitle"><h2>指令与速度反馈 <small>vx · vy · ω</small></h2><div><button id="resetTime">完整时间范围</button><button id="exportVelocity">PNG</button></div></div>
+<div id="velocity" class="velocity"></div><p class="plotNote">指令使用因果保持，反馈有界插值；残差未做时延补偿。图例可切换曲线，拖动可选择时间范围。</p></section>
+<section class="panel"><div class="panelTitle"><h2>跟踪误差</h2><button id="exportErrors">PNG</button></div><div id="errors" class="errors"></div></section>
+</div></div>
+<section class="panel reportOnly"><div class="panelTitle"><h2>评价指标</h2><div><select id="aggregateQuality" aria-label="导航统计依据" hidden><option value="inferred">推定区间统计</option><option value="confirmed">确认区间统计</option></select> <select id="stage" aria-label="运动阶段"><option value="">全部阶段</option></select></div></div>
+<div class="tableScroll"><table><thead><tr><th>指标</th><th>RMSE / 值</th><th>MAE</th><th>偏差</th><th>P95 |e|</th><th>Max |e|</th><th>累计超差 (s)</th><th>最长连续超差 (s)</th><th id="coverageHeading">路径区间覆盖率</th><th>有效 / 区间时长 (s)</th><th>依据</th></tr></thead><tbody id="metrics"></tbody></table></div>
+<p class="plotNote">P95 按有效时间加权。超差时间需配置对应阈值；未配置或无有效数据时显示“—”，不代表零超差。不可用指标的原因见“依据”列。端点距离为当前位置到所选路径终点的距离，不代表导航成功后的终点误差。定位轨迹不是独立真值。</p></section>
+<section class="panel reportOnly"><div class="panelTitle"><h2>事件与日志</h2><select id="eventType"><option value="">全部类别</option><option value="navigation">导航事件</option><option value="data_quality">数据质量</option><option value="tracking">跟踪异常</option><option value="observation">最大值定位</option></select></div>
+<div class="eventLayout"><div id="events"></div><pre id="logDetail">选择事件查看证据、日志行号和原始内容。</pre></div></section>
+<footer id="footer"></footer></main></div>
+<script>__TRACK_PLOTLY__</script><script type="application/json" id="analysis">__TRACK_DATA__</script><script>__TRACK_REVIEW_SCRIPT__</script><script>__TRACK_SCRIPT__</script>
+</body></html>

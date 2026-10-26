@@ -1,0 +1,7 @@
+{
+  "name": "plotly.js",
+  "version": "2.35.2",
+  "source": "https://cdn.plot.ly/plotly-2.35.2.min.js",
+  "sha256": "6d21266ce1bd7d9e5ab4e115989c70c20de0382fd973a8f26ab58619eba4d603",
+  "attribution": "Upstream attribution retained in distribution header"
+}

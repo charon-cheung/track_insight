@@ -1,0 +1,68 @@
+/* The report and review modes reuse the same three plots and playback controls. */
+.viewToolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px}
+.viewNavigation,.modeSwitch{display:flex;align-items:center;gap:7px}.viewNavigation select{max-width:240px}
+.modeSwitch button{min-width:76px}.sidebar-collapsed .shell,.review-mode .shell{grid-template-columns:minmax(0,1fr)}
+.sidebar-collapsed #sidebar,.review-mode #sidebar,.review-mode #toggleSidebar{display:none}#trajectoryOptions summary{display:none;cursor:pointer}
+#trajectoryOptions{min-width:0}#playbackDock{background:#fff}.cursorLabels{display:flex;flex-direction:column;gap:3px;text-align:right}
+#cursorTimestamp{font:11px monospace;color:var(--muted)}.instantReadouts{display:none}
+.review-mode header,.review-mode .eyebrow,.review-mode .cards,.review-mode .reportOnly,.review-mode footer{display:none}
+.review-mode .shell{max-width:none;height:100dvh}.review-mode #sidebar{height:100dvh;min-height:0;overflow:auto}
+.review-mode main{height:100dvh;display:flex;flex-direction:column;gap:8px;padding:12px;overflow:hidden}
+.review-mode .viewToolbar{margin:0;flex-shrink:0}.review-mode .titleRow{margin:0;flex-shrink:0;min-height:48px}
+.review-mode h1{font-size:36px;margin:3px 0}.review-mode #windowLabel{font-size:16.5px}
+.review-mode #failureBanner{flex-shrink:0;margin:0;padding:7px 12px}
+.review-mode #reviewWorkspace{display:flex;flex-direction:column;flex:1;min-height:0;gap:8px}
+.review-mode #chartDeck{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;flex:1;min-height:0}
+.review-mode #chartDeck>.panel{display:flex;flex-direction:column;min-width:0;min-height:0;margin:0;overflow:visible}
+.review-mode .panelTitle{height:74px;flex-shrink:0;align-items:center;align-content:center;flex-wrap:wrap;gap:6px;padding:10px 12px}
+.review-mode h2{font-size:13px}.review-mode h2 small{font-size:10px;margin-left:6px}
+.review-mode .panelTitle button{font-size:11px;padding:5px 8px}
+.review-mode .trajectory,.review-mode .velocity,.review-mode .errors{flex:1;min-height:160px;height:0;overflow:hidden;border-radius:0 0 7px 7px}
+.review-mode .plotNote{display:none}.review-mode #trajectoryOptions{position:relative;margin-left:auto}
+.review-mode #trajectoryOptions summary{display:block;font-size:11px;padding:5px 8px;color:#445873;border:1px solid #d5deeb;border-radius:4px}
+.review-mode #trajectoryOptions[open] .controls{position:absolute;top:100%;right:0;width:285px;padding:12px;background:white;border:1px solid var(--border);box-shadow:0 5px 16px #22304a20;border-radius:5px;z-index:30}
+.review-mode #candidates{max-height:65px;padding:4px;flex-shrink:0}
+.review-mode #playbackDock{flex-shrink:0;border:1px solid var(--border);border-radius:7px;overflow:hidden}
+.review-mode .playback{padding:8px 14px;border-top:0;gap:10px}.review-mode .playback input{min-width:60px}
+.review-mode .instantReadouts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border-top:1px solid #edf0f5}
+.instantGroup{padding:7px 12px;min-width:0}.instantGroup+.instantGroup{border-left:1px solid #edf0f5}
+.instantTitle{font-size:15.4px;color:var(--muted);margin-bottom:3px}.instantGroup table{table-layout:fixed;font-size:16.8px}
+.instantGroup th,.instantGroup td{padding:2px 3px;border:0;white-space:normal;text-align:right;background:none}
+.instantGroup th{font-size:14px;color:var(--muted)}.instantGroup td:last-child{font-size:15.4px}.instantGroup output{font-variant-numeric:tabular-nums}
+.instantGroup .command{color:#2473d6}.instantGroup .feedback{color:#e67b2f}
+.review-mode .readout{font-size:14px;line-height:1.4;min-height:0;padding:4px 14px 7px;max-height:72px;overflow:auto}
+@media(max-width:900px){.viewNavigation select{max-width:155px}.review-mode .badge{display:none}.review-mode .shell{display:block}
+.review-mode #sidebar{position:fixed;inset:0 auto 0 0;width:230px;z-index:40;box-shadow:5px 0 20px #23304a25;padding-top:56px}
+.review-mode #navigation{display:block}.review-mode main{overflow:auto}
+.review-mode #chartDeck{min-width:900px;min-height:370px}.review-mode #reviewWorkspace{overflow:auto}.review-mode #playbackDock{min-width:900px}}
+
+.review-mode #taskInfo{display:none}
+
+.review-mode .titleRow{display:grid;grid-template-columns:minmax(0,1fr)}
+.review-mode .titleRow>div{grid-area:1/1;text-align:center;min-width:0;padding:0 140px}
+.review-mode .titleRow>.badge{grid-area:1/1;justify-self:end}
+@media(max-width:900px){.review-mode .titleRow>div{padding:0}}
+
+#reviewWindowLabel{display:none}
+.review-mode #windowLabel{display:none}
+.review-mode #reviewWindowLabel{display:flex;justify-content:center;align-items:center;flex-wrap:wrap;gap:6px 30px;font-size:16.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+#reviewWindowLabel>span{white-space:nowrap}
+.review-mode #quickSelection{width:120px;height:33px}
+
+#titleEndpoints{display:none}
+.review-mode .selectionHeading{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:4px 24px}
+.review-mode #titleEndpoints:not([hidden]){display:inline;font-size:20px;font-weight:400;font-variant-numeric:tabular-nums}
+
+.viewNavigation button{white-space:nowrap}
+.viewNavigation button:disabled{opacity:.45;cursor:default;background:white;border-color:#d5deeb}
+
+.viewActions{display:flex;align-items:center;gap:18px}
+#favoritePicker:not([hidden]){display:flex;align-items:center;gap:7px;color:#bc6a0b;white-space:nowrap}
+#favoriteSelection{width:120px;height:33px}
+.selectionIdentity{display:inline-flex;align-items:center;gap:8px}
+#toggleFavorite{display:inline-flex;align-items:center;justify-content:center;width:34px;height:36px;padding:3px;border:0;background:transparent}
+#toggleFavorite svg{width:28px;height:28px;fill:white;stroke:#8292a9;stroke-width:1.4;stroke-linejoin:round}
+#toggleFavorite.starred svg{fill:#f59e0b;stroke:#da7b06}
+#toggleFavorite:hover svg{stroke:#d97706}
+#toggleFavorite:disabled{opacity:.45;cursor:default}
+@media(max-width:900px){.viewToolbar{flex-wrap:wrap}.viewActions{margin-left:auto;gap:10px}}
