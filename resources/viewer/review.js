@@ -118,6 +118,7 @@
       }
     });
     async function resizePlots() {
+      if(body.classList.contains('report-overview'))return;
       await Promise.all(graphs.map(id=>Plotly.Plots.resize($(id))));
       const count=body.classList.contains('review-mode')?3:6;
       for(const id of ['velocity','errors']) {
@@ -167,10 +168,11 @@
       body.classList.toggle('review-mode',review);
       updateNavigation(review);
       (review?$('reviewWorkspace'):$('trajectoryPanel')).append(dock);
-      $('trajectoryOptions').open=!review;
+      for(const id of ['trajectoryOptions','velocityOptions'])$(id).open=!review;
       for(const [id,active]of [['reportMode',!review],['reviewMode',review]]) {
         $(id).classList.toggle('active',active);$(id).setAttribute('aria-pressed',String(active));
       }
+      document.dispatchEvent(new CustomEvent('trackinsight:mode',{detail:{review}}));
       scheduleResize();
       window.scrollTo(0,review?0:reportScroll);
     }

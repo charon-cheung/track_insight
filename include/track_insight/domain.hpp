@@ -51,7 +51,7 @@ struct RunData {
   std::vector<Topic> topics;
   std::vector<Plan> plans;
   std::vector<PoseSample> poses;
-  std::vector<Velocity> commands, feedback, downstream;
+  std::vector<Velocity> commands, feedback, downstream, tracking_raw;
   std::vector<LogEvent> events;
   std::vector<Diagnostic> diagnostics;
   bool wall_clock{true}, log_compatible{false};
@@ -123,6 +123,7 @@ struct Evaluation {
 };
 struct Config {
   std::string plan_topic{"/plan"}, command_topic{"/cmd_vel_nav"};
+  std::string tracking_raw_topic{"/tracking_cmd_vel_raw"};
   std::string feedback_topic{"/dev/odometry/raw/dist"}, downstream_topic{"/ctrl/velocity/navi/clct"};
   std::string frame{"map"}, base{"rbs_base_link"}, command_frame{"rbs_base_link"};
   TimestampNs tf_gap{200000000}, velocity_gap{200000000}, command_age{200000000}, log_age{100000000};

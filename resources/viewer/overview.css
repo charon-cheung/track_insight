@@ -1,0 +1,19 @@
+#reportOverview[hidden]{display:none}
+#overviewNavigation{margin:0 0 12px;text-align:left;padding:11px 12px;font-weight:600}
+#overviewNavigation.selected{background:#e4edfc;color:#1756a4;border-left:3px solid var(--blue)}
+.review-mode #overviewNavigation{display:none}
+.report-overview .titleRow,.report-overview #cards,.report-overview #reviewWorkspace,.report-overview .reportOnly{display:none}
+.report-overview #previousSelection,.report-overview #quickSelection,.report-overview #nextSelection,.report-overview #deleteSelection,.report-overview #favoritePicker{display:none}
+#reportOverview h1{margin:6px 0 10px;font-size:25px}
+.overviewNote{color:var(--muted);font-size:12px;line-height:1.8;margin:7px 0 15px}
+#reportOverview .panel{margin:16px 0}
+#reportOverview .panelTitle{padding:13px 16px}
+#reportOverview .panel>.overviewNote{padding:0 16px;margin:12px 0}
+#reportOverview th,#reportOverview td{padding:9px 10px;font-size:12px}
+#reportOverview td:last-child{color:inherit}
+#reportOverview .caseLink{border:0;background:none;color:var(--blue);font-weight:600;padding:0;text-decoration:underline;text-underline-offset:3px}
+#reportOverview .caseLink:hover{color:#174b90}
+.overviewExtremes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.overviewExtremes>.panel{min-width:0}
+.overviewCase{font-size:12px;font-weight:400;color:var(--muted);padding:0 16px;margin:13px 0}
+@media(max-width:1200px){.overviewExtremes{grid-template-columns:minmax(0,1fr)}}

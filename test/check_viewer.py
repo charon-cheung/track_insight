@@ -57,6 +57,71 @@ async def main():
                 assert bounds['actual']==bounds['expected'],bounds
                 assert await evaluate("trackInsight.selected")==selected,'Step changed selected path'
             await evaluate("(()=>{const p=trackInsight.analysis.paths.find(p=>p.interval.id===trackInsight.selected);trackInsight.setCursor(p.start+1);document.getElementById('rate').value='1×';})()")
+        async def check_velocity_options():
+            saved=await evaluate("({key:trackInsight.selected,cursor:trackInsight.cursor})")
+            for key in ['command','feedback','tracking_raw','downstream']:
+                state=await evaluate("(async()=>{const key="+json.dumps(key)+",g=document.getElementById('velocity'),input=document.querySelector('[data-velocity-group=\"'+key+'\"]'),before={cursor:trackInsight.cursor,range:g.layout.xaxis.range.slice()};if(input.disabled)return {disabled:true};input.click();await new Promise(r=>setTimeout(r,100));return {before,after:{cursor:trackInsight.cursor,range:g.layout.xaxis.range.slice()},checked:input.checked,visible:g.data.filter(t=>t.legendgroup===key).map(t=>t.visible)};})()")
+                if state.get('disabled'):continue
+                assert not state['checked'] and all(v=='legendonly' for v in state['visible']),state
+                assert state['before']==state['after'],state
+            await evaluate("(async()=>{const p=trackInsight.analysis.paths.at(-1);await trackInsight.select([p],p.interval.id);document.getElementById('reportMode').click();await trackInsight.select([p],p.interval.id);})()")
+            state=await evaluate("({open:document.getElementById('velocityOptions').open,groups:[...document.querySelectorAll('[data-velocity-group]')].map(i=>({key:i.dataset.velocityGroup,checked:i.checked,disabled:i.disabled,visible:document.getElementById('velocity').data.filter(t=>t.legendgroup===i.dataset.velocityGroup).map(t=>t.visible)}))})")
+            assert state['open'],state
+            for item in state['groups']:
+                if item['disabled']:continue
+                assert not item['checked'] and all(v=='legendonly' for v in item['visible']),item
+            # Plotly legend actions use restyle; these must update the corresponding checkboxes too.
+            await evaluate("Plotly.restyle(document.getElementById('velocity'),{visible:true}).then(()=>true)")
+            assert await evaluate("[...document.querySelectorAll('[data-velocity-group]')].every(i=>i.disabled||i.checked)")
+            await evaluate("document.getElementById('reviewMode').click()")
+            assert not await evaluate("document.getElementById('velocityOptions').open")
+            await evaluate("(async()=>{const p=trackInsight.analysis.paths.find(p=>p.interval.id==="+json.dumps(saved['key'])+");await trackInsight.select([p],p.interval.id);trackInsight.setCursor("+str(saved['cursor'])+");})()")
+        async def check_downstream():
+            state=await evaluate("(()=>{const a=trackInsight.analysis,p=a.paths.find(p=>p.interval.id===trackInsight.selected),rows=(a.signals?.downstream||[]).filter(r=>p&&r[0]>=p.start&&r[0]<p.end);return {expected:a.meta.downstream_time_basis==='bag_record'&&rows.length>0,rows,origin:a.clock.origin_ns,raw:a.raw.downstream,traces:document.getElementById('velocity').data.filter(t=>t.legendgroup==='downstream')};})()")
+            if not state['expected']:
+                assert not state['traces'],state
+                return
+            assert len(state['traces'])==3
+            raw={str(v['stamp']['record_ns']):v for v in state['raw']}
+            samples={r[0]:r for r in state['rows']}
+            for row in state['rows']:
+                assert row[5] in raw
+                assert abs(row[0]-(int(row[5])-int(state['origin']))/1e9)<1e-9
+            for axis,trace in enumerate(state['traces']):
+                assert trace['line']['color']=='#9467bd' and 'record' in trace['name']
+                for x,y,text in zip(trace['x'],trace['y'],trace['text']):
+                    if x is None:continue
+                    assert y==samples[x][axis+1]
+                    assert 'bag record 时间' in text and '/ctrl/velocity/navi/clct' in text
+        async def check_overview():
+            saved=await evaluate("({key:trackInsight.selected,cursor:trackInsight.cursor})")
+            await evaluate("document.getElementById('reportMode').click()")
+            state=await evaluate("(()=>{const a=trackInsight.analysis;return {visible:!document.getElementById('reportOverview').hidden,active:document.getElementById('overviewNavigation').getAttribute('aria-current'),rows:[...document.querySelectorAll('#overviewCases tr[data-case]')].map(r=>r.dataset.case),expected:a.overview.case_ids,averages:[...document.querySelectorAll('#overviewAverages tr')].map(r=>({key:r.dataset.metric,cells:[...r.cells].map(c=>c.textContent)})),reference:a.overview.averages,plots:getComputedStyle(document.getElementById('reviewWorkspace')).display,star:getComputedStyle(document.getElementById('favoritePicker')).display};})()")
+            assert state['visible'] and state['active']=='page' and state['rows']==state['expected'],state
+            assert state['plots']=='none' and state['star']=='none',state
+            for row in state['averages']:
+                ref=state['reference'].get(row['key'],{})
+                for column,key in [(1,'case_mean_rmse'),(2,'pooled_rmse')]:
+                    value=ref.get(key)
+                    if value is None:assert row['cells'][column].startswith('—'),row
+                    else:assert abs(float(row['cells'][column].split()[0])-value)<=.000050001,row
+            if state['rows']:
+                key=state['rows'][-1]
+                await evaluate("document.querySelector('#overviewCases button[data-case=\""+key+"\"]').click()")
+                await asyncio.sleep(.3)
+                assert await evaluate("trackInsight.selected")==key
+                assert await evaluate("document.getElementById('reportOverview').hidden")
+                assert await evaluate("getComputedStyle(document.getElementById('reviewWorkspace')).display")!='none'
+            await evaluate("document.getElementById('overviewNavigation').click()")
+            assert await evaluate("!document.getElementById('reportOverview').hidden")
+            await asyncio.sleep(.2)
+            shot=await call("Page.captureScreenshot",{"format":"png","captureBeyondViewport":True})
+            Path(args.screenshot).with_stem(Path(args.screenshot).stem+'_overview').write_bytes(base64.b64decode(shot['data']))
+            await evaluate("document.getElementById('reviewMode').click()")
+            await asyncio.sleep(.3)
+            assert await evaluate("document.getElementById('reportOverview').hidden")
+            assert await evaluate("getComputedStyle(document.getElementById('overviewNavigation')).display")=='none'
+            await evaluate("(async()=>{const key="+json.dumps(saved['key'])+";await trackInsight.select(trackInsight.analysis.paths.filter(p=>p.interval.id===key||p.interval.navigation_id===key),key);trackInsight.setCursor("+str(saved['cursor'])+");})()")
         async def check_favorites():
             keys=await evaluate("[...document.getElementById('quickSelection').options].map(o=>o.value)")
             if len(keys)<2:return
@@ -162,6 +227,9 @@ async def main():
         else:raise AssertionError(await evaluate("document.getElementById('failureBanner').textContent"))
         assert await evaluate("Boolean(document.getElementById('reviewMode'))"),"Review mode selector absent"
         assert await evaluate("document.body.classList.contains('review-mode')&&document.getElementById('reviewMode').getAttribute('aria-pressed')==='true'"),'Default view is not review mode'
+        await check_velocity_options()
+        await check_downstream()
+        await check_overview()
         await check_favorites()
         await check_report_filter()
         await check_delete_selection()
@@ -272,6 +340,6 @@ async def main():
         assert not external,external
         assert not errors,errors
         print(json.dumps({"status":"passed","initial":initial,"offline":True,"timezone_independent":True,
-                          "playback":True,"favorites_add_remove_reload_navigate":True,"report_outcome_filter":True,"comprehensive_delete_persist_report_preserved":True,"step_50ms_both_modes":True,"step_pauses_and_clamps":True,"range_link":True,"review_mode":True,"shared_cursor":True,
+                          "playback":True,"report_overview":True,"favorites_add_remove_reload_navigate":True,"report_outcome_filter":True,"comprehensive_delete_persist_report_preserved":True,"step_50ms_both_modes":True,"step_pauses_and_clamps":True,"range_link":True,"review_mode":True,"shared_cursor":True,
                           "navigation_cases":sorted(tested),"state_preserved":True,"viewports":["1366x768","1920x1080"],"errors":len(errors)},ensure_ascii=False))
 asyncio.run(main())

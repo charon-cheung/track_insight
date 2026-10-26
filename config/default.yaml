@@ -1,6 +1,7 @@
 topics:
   plan: /plan
   command: /cmd_vel_nav
+  tracking_raw: /tracking_cmd_vel_raw
   feedback: /dev/odometry/raw/dist
   downstream: /ctrl/velocity/navi/clct
 frames:

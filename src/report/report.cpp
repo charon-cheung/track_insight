@@ -62,8 +62,10 @@ void checkOwned(const fs::path& path) {
   }
 }
 }
-int renderReport(Json analysis,const fs::path& requested,const fs::path& resources,bool replace) {
-  validate(analysis);const auto output=fs::absolute(requested).lexically_normal();
+int renderReport(Json analysis,const fs::path& requested,const fs::path& resources,bool replace,
+                 const std::function<void(double)>& progress) {
+  if(progress)progress(0);
+  validate(analysis);analysis["overview"]=makeOverview(analysis);const auto output=fs::absolute(requested).lexically_normal();
   if(output==output.root_path())throw std::runtime_error("invalid output root");
   if(fs::exists(output)&&!fs::is_empty(output)&&!replace)throw std::runtime_error("output already exists; use --replace for an owned report");
   checkOwned(output);fs::create_directories(output.parent_path());
@@ -75,7 +77,7 @@ int renderReport(Json analysis,const fs::path& requested,const fs::path& resourc
   fs::create_directory(staging);bool backed_up=false;
   try {
     std::vector<std::string> failures;
-    auto files=writeFigures(analysis,staging,failures);
+    auto files=writeFigures(analysis,staging,failures,[&](double fraction){if(progress)progress(.85*fraction);});
     bool usable=false;
     for(const auto& p:analysis["paths"])for(const auto& name:{"path_distance","vx_residual"})
       if(!p["metrics"][name]["rmse"].is_null())usable=true;
@@ -90,15 +92,18 @@ int renderReport(Json analysis,const fs::path& requested,const fs::path& resourc
     manifest["viewer_dependency"]=Json::parse(readText(resources/"viewer"/"vendor.json"));
     analysis["generation"]={{"status",manifest["status"]},{"failures",failures}};
     Json summary={{"metric_version",analysis["metric_version"]},{"paths",Json::array()},
-      {"navigation",analysis["navigation_metrics"]}};
+      {"navigation",analysis["navigation_metrics"]},{"overview",analysis["overview"]}};
     for(const auto& p:analysis["paths"])summary["paths"].push_back({{"interval",p["interval"]},{"metrics",p["metrics"]},{"stages",p["stages"]}});
     writeText(fs::path(staging)/"analysis.json",analysis.dump());
     writeText(fs::path(staging)/"metrics.json",summary.dump(2));
     writeText(fs::path(staging)/"metrics.csv",metricCsv(analysis));
+    if(progress)progress(.9);
     std::string payload=analysis.dump();replaceAll(payload,"<","\\u003c");replaceAll(payload,">","\\u003e");replaceAll(payload,"&","\\u0026");
     std::string html=readText(resources/"viewer"/"index.html");
     replaceAll(html,"__TRACK_STYLE__",readText(resources/"viewer"/"viewer.css"));
     replaceAll(html,"__TRACK_PLOTLY__",readText(resources/"viewer"/"plotly.min.js"));
+    replaceAll(html,"__TRACK_OVERVIEW_STYLE__",readText(resources/"viewer"/"overview.css"));
+    replaceAll(html,"__TRACK_OVERVIEW_SCRIPT__",readText(resources/"viewer"/"overview.js"));
     replaceAll(html,"__TRACK_SCRIPT__",readText(resources/"viewer"/"viewer.js"));
     replaceAll(html,"__TRACK_REVIEW_STYLE__",readText(resources/"viewer"/"review.css"));
     replaceAll(html,"__TRACK_REVIEW_SCRIPT__",readText(resources/"viewer"/"review.js"));
@@ -107,10 +112,11 @@ int renderReport(Json analysis,const fs::path& requested,const fs::path& resourc
     for(const auto& name:{"analysis.json","metrics.json","metrics.csv","report.html"})manifest["files"].push_back(name);
     writeText(fs::path(staging)/".track_insight","Track Insight report v1\n");
     writeText(fs::path(staging)/"manifest.json",manifest.dump(2));
+    if(progress)progress(.95);
     if(fs::exists(output)){fs::rename(output,backup);backed_up=true;}
     try{fs::rename(staging,output);}catch(...){if(backed_up){fs::rename(backup,output);backed_up=false;}throw;}
     if(backed_up){fs::remove_all(backup);backed_up=false;}
-    fs::remove(lock);return partial?2:0;
+    fs::remove(lock);if(progress)progress(1);return partial?2:0;
   }catch(...) {
     std::error_code ec;fs::remove_all(staging,ec);
     if(backed_up&&!fs::exists(output))fs::rename(backup,output,ec);

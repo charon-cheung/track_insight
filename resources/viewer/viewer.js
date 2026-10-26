@@ -5,6 +5,7 @@
   const name={goal_position_error:'任务终点位置误差',goal_yaw_error:'任务终点姿态误差',stopped_residual_error:'停车残差',stopped_drift:'停车漂移',settling_time:'结果后稳定时间',lateral:'横向误差',path_distance:'路径距离',endpoint_distance:'路径终点距离',
     yaw_error:'目标姿态误差',vx_residual:'vx 反馈 − 指令',vy_residual:'vy 反馈 − 指令',
     omega_residual:'ω 反馈 − 指令',speed_vector_residual:'平面速度残差'};
+  const velocityControls=Object.fromEntries([...$('velocityOptions').querySelectorAll('input')].map(input=>[input.dataset.velocityGroup,input]));
   const fmt=(v,d=3)=>v===null||v===undefined?'—':Number(v).toFixed(d);
   const ns=t=>origin+BigInt(Math.round(t*1e9));
   const rel=s=>Number(BigInt(s)-origin)/1e9;
@@ -154,7 +155,14 @@
       }),mode:'lines',
         name:p.interval.plan_id+' 实际',line:{color:'#c7a11a',width:2},hovertemplate:'%{text}<br>x %{x:.3f} · y %{y:.3f}<extra></extra>'});
       if($('showMarkers').checked) {
-        const valid=p.tracking.filter(r=>r[10]);if(valid.length)traces.push({x:[valid[0][1],valid.at(-1)[1]],y:[valid[0][2],valid.at(-1)[2]],
+        const valid=p.tracking.filter(r=>r[10]);
+        if(valid.length&&$('showDirections').checked)for(const [index,r]of [valid[0],valid.at(-1)].entries()) {
+          if(!Number.isFinite(r[3]))continue;
+          traces.push({x:[r[1]],y:[r[2]],mode:'lines',name:index?'终点朝向':'起点朝向',
+            meta:{endpoint_pose:r.slice(1,4)},line:{color:index?'#df843d':'#0b9f80',width:4},
+            showlegend:false,hoverinfo:'skip'});
+        }
+        if(valid.length)traces.push({x:[valid[0][1],valid.at(-1)[1]],y:[valid[0][2],valid.at(-1)[2]],
           mode:'markers+text',name:p.interval.plan_id+' 起终点',showlegend:false,text:['起点','终点'],textposition:'top center',
           customdata:[time(valid[0][0]),time(valid.at(-1)[0])],hovertemplate:'%{customdata}<extra></extra>',
           marker:{color:['#0b9f80','#df843d'],size:16.5,symbol:['star','circle']}});
@@ -178,15 +186,19 @@
   async function series() {
     const velocity=[],errors=[];
     for(const p of selected) {
-      for(let group=0;group<2;group++) {
-        const source=A.signals?.[group?'feedback':'commands'];
+      for(let group=0;group<4;group++) {
+        const source=A.signals?.[['commands','feedback','tracking_raw','downstream'][group]];
+        if(group>=2&&!source?.length)continue;
+        if(group===3&&A.meta.downstream_time_basis!=='bag_record')continue;
         const rows=source?source.filter(r=>r[0]>=p.start&&r[0]<p.end):p.velocity.map(r=>[r[0],...r.slice(group?4:1,group?7:4),r[7],r[8],r[9],r[10]]);
-        const vr=reduce(rows,[1,2,3],4,6);
+        if(group>=2&&!rows.length)continue;
+        const vr=reduce(rows,[1,2,3],4,6),key=['command','feedback','tracking_raw','downstream'][group];
         for(let axis=0;axis<3;axis++)velocity.push({
-          ...arrays(vr,r=>r[0],r=>r[1+axis],r=>r[4],r=>r[6]),mode:'lines',name:group?'反馈':'指令',
-          legendgroup:group?'feedback':'command',showlegend:p===selected[0]&&axis===0,
+          ...arrays(vr,r=>r[0],r=>r[1+axis],r=>r[4],r=>r[6],r=>time(r[0])+(group===3?'<br>'+A.config.topics.downstream+' · bag record 时间':'')),
+          mode:'lines',name:['指令 · '+A.config.topics.command,'反馈','原始指令','平滑输出 · '+A.config.topics.downstream+'<br>（record 时间）'][group],
+          legendgroup:key,visible:velocityControls[key].checked?true:'legendonly',showlegend:p===selected[0]&&axis===0,
           xaxis:axis?'x'+(axis+1):'x',yaxis:axis?'y'+(axis+1):'y',
-          line:{color:group?'#e67b2f':'#2473d6',width:1.5,shape:group?'linear':'hv'}});
+          line:{color:['#2473d6','#e67b2f','#000000','#9467bd'][group],width:1.5,shape:group===1?'linear':'hv'}});
       }
       const tr=reduce(p.tracking,[6,7,9],10,13);
       for(let axis=0;axis<3;axis++) {
@@ -196,9 +208,11 @@
           xaxis:axis?'x'+(axis+1):'x',yaxis:axis?'y'+(axis+1):'y',line:{color:['#2473d6','#1b9c8e','#9968bd'][axis],width:1.5}});
       }
     }
+    for(const [key,input] of Object.entries(velocityControls))input.disabled=!velocity.some(trace=>trace.legendgroup===key);
     const el=layout(['横向 (m)','路径距离 (m)','姿态 (rad)']);
     if(!selected.some(p=>p.tracking.some(r=>r[9]!==null)))el.annotations=[{xref:'paper',yref:'paper',x:.5,y:.12,text:'无已验证的 target_yaw，姿态误差不可用',showarrow:false,font:{size:12,color:'#8b7894'}}];
-    await Promise.all([Plotly.react($('velocity'),velocity,layout(['vx (m/s)','vy (m/s)','ω (rad/s)']),config),
+    await Promise.all([Plotly.react($('velocity'),velocity,{...layout(['vx (m/s)','vy (m/s)','ω (rad/s)']),
+        legend:{...common.legend,y:1.02,yanchor:'bottom'}},config),
       Plotly.react($('errors'),errors,el,config)]);
   }
   function findAt(rows,t,endIndex) {
@@ -218,7 +232,14 @@
     if(valid){x=[r[1],r[4]];y=[r[2],r[5]];
       if($('showDirections').checked){const span=graph._fullLayout.xaxis.range;
         const length=(span[1]-span[0])*.035;dx=[r[1],r[1]+Math.cos(r[3])*length];dy=[r[2],r[2]+Math.sin(r[3])*length];}}
-    Plotly.restyle(graph,{x:[x,dx],y:[y,dy]},[last-2,last-1]);
+    const xs=[x,dx],ys=[y,dy],indices=[last-2,last-1];
+    const span=graph._fullLayout.xaxis.range,endpointLength=(span[1]-span[0])*.07;
+    graph.data.forEach((trace,index)=>{
+      const pose=trace.meta?.endpoint_pose;if(!pose)return;
+      xs.push([pose[0],pose[0]+Math.cos(pose[2])*endpointLength]);
+      ys.push([pose[1],pose[1]+Math.sin(pose[2])*endpointLength]);indices.push(index);
+    });
+    Plotly.restyle(graph,{x:xs,y:ys},indices);
     const shapes=[{type:'line',xref:'x',yref:'paper',x0:cursor,x1:cursor,y0:0,y1:1,line:{color:'#7890ae',width:1,dash:'dot'}}];
     const stamp=ns(cursor),magnitude=stamp<0n?-stamp:stamp;
     const timestamp=(stamp<0n?'-':'')+magnitude/1000000000n+'.'+
@@ -266,6 +287,7 @@
     }
   }
   async function select(paths,key) {
+    document.dispatchEvent(new Event('trackinsight:selection'));
     playing=false;$('play').textContent='播放';ready=false;selected=paths;selectedKey=key;
     for(const b of $('navigation').querySelectorAll('button')) {
       b.classList.toggle('selected',b.dataset.key===key);
@@ -310,6 +332,10 @@
   }
   $('aggregateQuality').onchange=showMetrics;$('stage').onchange=showMetrics;$('eventType').onchange=showEvents;
   for(const id of ['showPlans','showActual','showMarkers','showDirections','multiPlans'])$(id).onchange=async()=>{await trajectory();setCursor(cursor);};
+  for(const [key,input] of Object.entries(velocityControls))input.onchange=()=>{
+    const indices=$('velocity').data.flatMap((trace,i)=>trace.legendgroup===key?[i]:[]);
+    if(indices.length)Plotly.restyle($('velocity'),{visible:input.checked?true:'legendonly'},indices);
+  };
   $('timeline').oninput=()=>setCursor(range[0]+Number($('timeline').value)/10000*(range[1]-range[0]));
   $('resetTrajectory').onclick=()=>Plotly.relayout($('trajectory'),{'xaxis.autorange':true,'yaxis.autorange':true});
   $('resetTime').onclick=()=>{for(const id of ['velocity','errors']){const patch={};for(let i=1;i<=3;i++){const k='xaxis'+(i===1?'':i);patch[k+'.range']=range.slice();Object.assign(patch,Object.fromEntries(Object.entries(ticks(range)).map(([key,value])=>[k+'.'+key,value])));}Plotly.relayout($(id),patch);}};
@@ -340,6 +366,15 @@
         try{await Promise.all(['velocity','errors'].map(id=>Plotly.relayout($(id),patch)));setCursor(cursor);}finally{linked=false;}
       });
     }
+    $('velocity').on('plotly_restyle',()=>{
+      for(const [key,input] of Object.entries(velocityControls)) {
+        const traces=$('velocity').data.filter(trace=>trace.legendgroup===key);
+        if(traces.length)input.checked=traces.some(trace=>trace.visible!==false&&trace.visible!=='legendonly');
+      }
+    });
+    $('trajectory').on('plotly_relayout',e=>{
+      if(Object.keys(e).some(key=>/^[xy]axis\.(range|autorange)/.test(key)))setCursor(cursor);
+    });
     $('trajectory').on('plotly_click',e=>{
       if(!e.points.length)return;const q=e.points[0],axis=$('trajectory')._fullLayout.xaxis;
       const tolerance=(axis.range[1]-axis.range[0])*.012,candidates=[];
@@ -350,7 +385,7 @@
       if(candidates.length){setCursor(candidates[0][0]);for(const r of candidates){const b=document.createElement('button');b.textContent=time(r[0],false);b.onclick=()=>setCursor(r[0]);$('candidates').append(b);}}
     });
     requestAnimationFrame(animation);
-    window.trackInsight={analysis:A,select,setCursor,get cursor(){return cursor;},get selected(){return selectedKey;},time};
+    window.trackInsight={analysis:A,metricNames:name,select,setCursor,get cursor(){return cursor;},get selected(){return selectedKey;},time};
     document.dispatchEvent(new Event('trackinsight:ready'));setCursor(cursor);
   }
   init().catch(error=>{$('failureBanner').hidden=false;$('failureBanner').textContent='页面初始化失败：'+error.message;console.error(error);});

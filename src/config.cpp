@@ -9,6 +9,7 @@ Config loadConfig(const std::filesystem::path& path) {
   auto root=YAML::LoadFile(path.string());
   auto stringValue=[&](const char* group,const char* key,std::string& value){if(root[group]&&root[group][key])value=root[group][key].as<std::string>();};
   stringValue("topics","plan",c.plan_topic);stringValue("topics","command",c.command_topic);
+  stringValue("topics","tracking_raw",c.tracking_raw_topic);
   stringValue("topics","feedback",c.feedback_topic);stringValue("topics","downstream",c.downstream_topic);
   stringValue("frames","world",c.frame);stringValue("frames","base",c.base);stringValue("frames","command",c.command_frame);
   auto duration=[&](const char* key,TimestampNs& value){

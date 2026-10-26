@@ -108,10 +108,14 @@ std::string trajectory(const Json& a,const Json& p,const Json& plan,const Displa
       formatTimestamp(std::stoll(max_metric["max_ns"].get<std::string>()),clock,false),14,"#ad4351");break;
   }
   if(first) {
+    const double x=ax.px((*first)[1]),y=ax.py((*first)[2]),angle=(*first)[3];
+    c.line(x,y,x+26*std::cos(angle),y-26*std::sin(angle),"#11a682",2);
     c.dot(ax.px((*first)[1]),ax.py((*first)[2]),"#11a682",7);
     c.text(130,925,"Actual start: "+formatTimestamp(std::stoll((*first)[12].get<std::string>()),clock),14);
   }
   if(last) {
+    const double x=ax.px((*last)[1]),y=ax.py((*last)[2]),angle=(*last)[3];
+    c.line(x,y,x+26*std::cos(angle),y-26*std::sin(angle),"#e47a2c",2);
     c.dot(ax.px((*last)[1]),ax.py((*last)[2]),"#e47a2c",7);
     c.text(750,925,"Actual last sample: "+formatTimestamp(std::stoll((*last)[12].get<std::string>()),clock),14);
   }
@@ -125,20 +129,24 @@ std::string series(const Json& a,const Json& p,const DisplayClock& clock,bool er
   Canvas c("Track Insight | "+p["interval"]["plan_id"].get<std::string>()+(error?" | Tracking errors":" | Command and feedback"),
     p["start_label"].get<std::string>()+"  —  "+p["end_label"].get<std::string>());
   const auto& rows=p.at(error?"tracking":"velocity");
-  Json commands=Json::array(),feedback=Json::array();
-  if(!error&&a.contains("signals"))for(const auto& key:{"commands","feedback"}) {
-    auto& target=std::string(key)=="commands"?commands:feedback;
+  Json commands=Json::array(),feedback=Json::array(),tracking_raw=Json::array(),downstream=Json::array();
+  if(!error&&a.contains("signals"))for(const auto& key:{"commands","feedback","tracking_raw","downstream"}) {
+    if(!a["signals"].contains(key))continue;
+    if(std::string(key)=="downstream"&&a["meta"].value("downstream_time_basis","")!="bag_record")continue;
+    auto& target=std::string(key)=="commands"?commands:std::string(key)=="feedback"?feedback:std::string(key)=="tracking_raw"?tracking_raw:downstream;
     for(const auto& row:a["signals"][key])if(row[0]>=p["start"]&&row[0]<p["end"])target.push_back(row);
   }
   const std::vector<std::string> names=error?std::vector<std::string>{"Signed lateral (m)","Distance to segment (m)","Target yaw error (rad)"}:
     std::vector<std::string>{"vx (m/s)","vy (m/s)","omega (rad/s)"};
-  if(!error){c.text(155,123,"Blue: controller command",14,"#2274e0");c.text(600,123,"Orange: odometry feedback",14,"#e47a2c");}
+  if(!error){c.text(155,123,"Blue: command "+a["config"]["topics"]["command"].get<std::string>(),14,"#2274e0");c.text(600,123,"Orange: odometry feedback",14,"#e47a2c");}
+  if(!error&&!tracking_raw.empty())c.text(1000,123,"Black: tracking raw command",14,"#000000");
+  if(!error&&!downstream.empty())c.text(155,145,"Purple: "+a["config"]["topics"]["downstream"].get<std::string>()+" (bag record time)",14,"#9467bd");
   for(int panel=0;panel<3;++panel) {
     double lo=0,hi=0;std::size_t count=0;const int index=error?(panel==0?6:panel==1?7:9):panel+1;
     auto valid=[&](const Json& r){return r[error?10:7].get<bool>()&&!r[index].is_null();};
     for(const auto& r:rows)if(valid(r)){lo=std::min(lo,r[index].get<double>());hi=std::max(hi,r[index].get<double>());++count;
       if(!error){lo=std::min(lo,r[index+3].get<double>());hi=std::max(hi,r[index+3].get<double>());}}
-    if(!error)for(const auto* signal:{&commands,&feedback})for(const auto& r:*signal)if(r[4].get<bool>()){
+    if(!error)for(const auto* signal:{&commands,&feedback,&tracking_raw,&downstream})for(const auto& r:*signal)if(r[4].get<bool>()){
       lo=std::min(lo,r[index].get<double>());hi=std::max(hi,r[index].get<double>());++count;
     }
     double pad=std::max((hi-lo)*0.12,0.01);
@@ -152,6 +160,8 @@ std::string series(const Json& a,const Json& p,const DisplayClock& clock,bool er
         auto ok=[](const Json& r){return r[4].get<bool>();};
         polyline(c,commands,ax,"#2274e0",ok,x,[&](const Json& r){return r[index].get<double>();},true,true);
         polyline(c,feedback,ax,"#e47a2c",ok,x,[&](const Json& r){return r[index].get<double>();},true);
+        if(!tracking_raw.empty())polyline(c,tracking_raw,ax,"#000000",ok,x,[&](const Json& r){return r[index].get<double>();},true,true);
+        if(!downstream.empty())polyline(c,downstream,ax,"#9467bd",ok,x,[&](const Json& r){return r[index].get<double>();},true,true);
       }
     }else c.text(400,ax.y+95,error&&panel==2?"Unavailable: no verified target-yaw evidence":"Unavailable: no valid aligned data",18);
   }
@@ -164,13 +174,15 @@ bool png(const std::filesystem::path& input,const std::filesystem::path& output)
   return WIFEXITED(status)&&WEXITSTATUS(status)==0&&std::filesystem::exists(output)&&std::filesystem::file_size(output)>0;
 }
 }
-std::vector<std::string> writeFigures(const Json& a,const std::filesystem::path& output,std::vector<std::string>& failures) {
+std::vector<std::string> writeFigures(const Json& a,const std::filesystem::path& output,std::vector<std::string>& failures,
+                                      const std::function<void(double)>& progress) {
   std::filesystem::create_directories(output/"figures");std::vector<std::string> files;
-  const auto clock=readClock(a);
+  const auto clock=readClock(a);std::size_t completed=0,total=a.at("paths").size()*3;
+  if(progress)progress(0);
   for(const auto& p:a.at("paths")) {
     const Json* plan=nullptr;
     for(const auto& candidate:a.at("plans"))if(candidate["id"]==p["interval"]["plan_id"]){plan=&candidate;break;}
-    if(!plan)continue;
+    if(!plan){completed+=3;if(progress&&total)progress(double(completed)/total);continue;}
     const auto plan_id=p["interval"]["plan_id"].get<std::string>();
     if(!std::regex_match(plan_id,std::regex("P[1-9][0-9]*")))throw std::runtime_error("invalid plan identifier");
     for(const auto& kind:{"trajectory","velocity","errors"}) {
@@ -179,8 +191,10 @@ std::vector<std::string> writeFigures(const Json& a,const std::filesystem::path&
       writeText(output/(stem+".svg"),svg);files.push_back(stem+".svg");
       if(png(output/(stem+".svg"),output/(stem+".png")))files.push_back(stem+".png");
       else {std::filesystem::remove(output/(stem+".png"));failures.push_back(stem+".png: conversion failed");}
+      ++completed;if(progress&&total)progress(double(completed)/total);
     }
   }
+  if(progress)progress(1);
   return files;
 }
 }

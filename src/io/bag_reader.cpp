@@ -38,7 +38,9 @@ Velocity velocity(const geometry_msgs::msg::Twist& twist,const Stamp& s,const st
   return result;
 }
 }
-RunData readBag(const std::filesystem::path& input,const std::filesystem::path& log,const Config& config){
+RunData readBag(const std::filesystem::path& input,const std::filesystem::path& log,const Config& config,
+                const std::function<void(double)>& progress){
+  if(progress)progress(0);
   InputPackage package(input,config);RunData data;data.input_path=std::filesystem::absolute(input).string();
   data.input_hash=hashInput(input);data.frame=config.frame;data.base=config.base;
   rosbag2_cpp::Reader reader;rosbag2_storage::StorageOptions options;options.uri=package.bagPath().string();options.storage_id="mcap";
@@ -49,10 +51,13 @@ RunData readBag(const std::filesystem::path& input,const std::filesystem::path& 
   std::map<std::string,std::string> types;
   for(const auto& t:reader.get_all_topics_and_types())types[t.name]=t.type;
   rosbag2_storage::StorageFilter filter;
-  filter.topics={config.plan_topic,config.command_topic,config.feedback_topic,config.downstream_topic,"/tf","/tf_static"};
+  filter.topics={config.plan_topic,config.command_topic,config.feedback_topic,config.downstream_topic,config.tracking_raw_topic,"/tf","/tf_static"};
   for(const auto& t:types)if(t.second=="action_msgs/msg/GoalStatusArray"&&
     t.first.find("navigate_to_pose/_action/status")!=std::string::npos)filter.topics.push_back(t.first);
   reader.set_filter(filter);
+  std::uint64_t total=0;
+  for(const auto& topic:data.topics)
+    if(std::find(filter.topics.begin(),filter.topics.end(),topic.name)!=filter.topics.end())total+=topic.count;
   std::map<std::string,int> goal_status;
   TfHistory transforms(config,data.end-data.start);
   std::uint64_t sequence=0;TimestampNs last_record=0;int epoch=0;
@@ -60,6 +65,7 @@ RunData readBag(const std::filesystem::path& input,const std::filesystem::path& 
   while(reader.has_next()){
     const auto message=reader.read_next();Stamp s;s.record_ns=message->recv_timestamp;s.send_ns=message->send_timestamp;
     s.ns=s.record_ns;s.sequence=sequence++;s.source=message->topic_name;
+    if(progress&&total&&sequence%1024==0)progress(.8*std::min(1.0,double(sequence)/total));
     if(last_record&&s.record_ns<last_record-kSecond){++epoch;data.diagnostics.push_back({"record_clock_reset","Recording time moved backwards",s.source,s.record_ns});}
     last_record=s.record_ns;s.epoch=epoch;
     auto setHeader=[&](const builtin_interfaces::msg::Time& time){
@@ -107,10 +113,15 @@ RunData readBag(const std::filesystem::path& input,const std::filesystem::path& 
       }else if(type=="geometry_msgs/msg/TwistStamped"||type=="geometry_msgs/msg/Twist"){
         Velocity v;
         if(type=="geometry_msgs/msg/TwistStamped"){
-          const auto twist=decode<geometry_msgs::msg::TwistStamped>(*message);setHeader(twist.header.stamp);
+          const auto twist=decode<geometry_msgs::msg::TwistStamped>(*message);
+          // The smoother retains the input header; its output is timed by bag receipt.
+          if(s.source==config.downstream_topic){s.header_ns=stamp(twist.header.stamp);s.clock_domain="bag_record";}
+          else setHeader(twist.header.stamp);
           v=velocity(twist.twist,s,twist.header.frame_id.empty()?config.command_frame:twist.header.frame_id);
         }else v=velocity(decode<geometry_msgs::msg::Twist>(*message),s,config.command_frame);
-        if(s.source==config.command_topic)data.commands.push_back(v);else if(s.source==config.downstream_topic)data.downstream.push_back(v);
+        if(s.source==config.command_topic)data.commands.push_back(v);
+        if(s.source==config.downstream_topic){v.stamp.clock_domain="bag_record";data.downstream.push_back(v);}
+        if(s.source==config.tracking_raw_topic)data.tracking_raw.push_back(v);
       }else data.diagnostics.push_back({"unsupported_type","Selected topic has unsupported message type: "+type,s.source,s.ns});
     }catch(const std::exception& error){
       data.diagnostics.push_back({"decode_error",error.what(),s.source,s.record_ns});
@@ -118,9 +129,10 @@ RunData readBag(const std::filesystem::path& input,const std::filesystem::path& 
         invalid.stamp=s;invalid.valid=false;invalid.reason="path_decode_error";data.plans.push_back(std::move(invalid));}
     }
   }
+  if(progress)progress(.8);
   transforms.finish();data.poses=transforms.poses();
   if(transforms.hasClockReset())data.diagnostics.push_back({"tf_header_clock_reset","TF header time reset; affected chains excluded rather than merged","/tf",0});
-  for(auto* values:{&data.commands,&data.feedback,&data.downstream}){
+  for(auto* values:{&data.commands,&data.feedback,&data.downstream,&data.tracking_raw}){
     for(auto& v:*values){if(clock_invalid.count(v.stamp.source))v.stamp.valid=false;transforms.convert(v);}
     std::stable_sort(values->begin(),values->end(),[](const auto& a,const auto& b){
       return a.stamp.ns==b.stamp.ns?a.stamp.sequence<b.stamp.sequence:a.stamp.ns<b.stamp.ns;});
@@ -159,6 +171,7 @@ RunData readBag(const std::filesystem::path& input,const std::filesystem::path& 
   if(data.commands.empty())data.diagnostics.push_back({"command_missing","No controller commands recorded",config.command_topic,0});
   if(data.feedback.empty())data.diagnostics.push_back({"feedback_missing","No odometry velocity feedback recorded",config.feedback_topic,0});
   if(data.poses.empty())data.diagnostics.push_back({"poses_missing","No dynamic TF timestamps recorded","/tf",0});
+  if(progress)progress(1);
   return data;
 }
 }

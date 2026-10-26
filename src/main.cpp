@@ -2,6 +2,8 @@
 #include "track_insight/report.hpp"
 #include <ament_index_cpp/get_package_share_directory.hpp>
 #include <iostream>
+#include <algorithm>
+#include <iomanip>
 #include <map>
 #include <set>
 
@@ -17,6 +19,7 @@ void usage() {
 }
 }
 int main(int argc,char** argv) {
+  int displayed_progress=-1;
   try {
     if(argc<2||std::string(argv[1])=="--help"){usage();return argc<2?1:0;}
     const std::string command=argv[1];
@@ -40,20 +43,32 @@ int main(int argc,char** argv) {
     }
     const auto input=require("--bag");if(command=="analyze")require("--output");
     const auto config=loadConfig(args["--config"]);
-    auto data=readBag(input,args["--log"],config);
-    const auto evaluation=evaluate(data,config);
+    // Weighted work phases: input 60%, evaluation 10%, serialization 5%, report 25%.
+    auto progress=[&](double fraction){
+      if(command!="analyze")return;
+      const int percent=std::clamp(int(fraction*100),0,100);
+      if(percent<=displayed_progress)return;
+      displayed_progress=percent;const int filled=percent*30/100;
+      std::cerr<<'\r'<<'['<<std::string(filled,'=')<<std::string(30-filled,' ')<<"] "
+        <<std::setw(3)<<percent<<'%'<<std::flush;
+    };
+    auto data=readBag(input,args["--log"],config,[&](double fraction){progress(.6*fraction);});
+    const auto evaluation=evaluate(data,config);progress(.7);
     auto analysis=makeAnalysis(data,evaluation,config,captureDisplayClock(data.start,data.end,data.wall_clock));
+    progress(.75);
     if(command=="inspect") {
       Json info={{"meta",analysis["meta"]},{"topics",analysis["topics"]},{"capabilities",analysis["capabilities"]},
         {"diagnostics",analysis["diagnostics"]},{"path_publications",data.plans.size()},
         {"pose_samples",data.poses.size()},{"command_samples",data.commands.size()},
-        {"feedback_samples",data.feedback.size()},{"navigation_tasks",evaluation.tasks.size()}};
+        {"tracking_raw_samples",data.tracking_raw.size()},{"feedback_samples",data.feedback.size()},{"navigation_tasks",evaluation.tasks.size()}};
       std::cout<<info.dump(2)<<'\n';return data.plans.empty()?2:0;
     }
-    const int code=renderReport(std::move(analysis),args["--output"],resources,args.count("--replace"));
-    std::cout<<"Report: "<<std::filesystem::absolute(args["--output"])/"report.html"
+    const int code=renderReport(std::move(analysis),args["--output"],resources,args.count("--replace"),
+      [&](double fraction){progress(.75+.25*fraction);});
+    std::cerr<<"\n\n";
+    std::cout<<"Report is in: "<<std::filesystem::absolute(args["--output"])/"report.html"
       <<"\nPaths: "<<data.plans.size()<<"; navigation tasks: "<<evaluation.tasks.size()
-      <<"; association: "<<(data.log_compatible?"log evidence available":"inferred publication windows")<<'\n';
+      <<'\n';
     return code;
-  }catch(const std::exception& e){std::cerr<<"Track Insight: "<<e.what()<<'\n';return 1;}
+  }catch(const std::exception& e){if(displayed_progress>=0)std::cerr<<'\n';std::cerr<<"Track Insight: "<<e.what()<<'\n';return 1;}
 }

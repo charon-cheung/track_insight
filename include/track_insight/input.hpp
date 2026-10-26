@@ -1,6 +1,7 @@
 #pragma once
 #include "track_insight/domain.hpp"
 #include <memory>
+#include <functional>
 
 namespace track_insight {
 class InputPackage {
@@ -15,5 +16,6 @@ private:
 };
 std::string hashInput(const std::filesystem::path& path);
 std::string hashText(const std::string& text);
-RunData readBag(const std::filesystem::path& input, const std::filesystem::path& log, const Config& config);
+RunData readBag(const std::filesystem::path& input, const std::filesystem::path& log, const Config& config,
+                const std::function<void(double)>& progress={});
 }

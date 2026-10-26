@@ -2,8 +2,8 @@
 .viewToolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px}
 .viewNavigation,.modeSwitch{display:flex;align-items:center;gap:7px}.viewNavigation select{max-width:240px}
 .modeSwitch button{min-width:76px}.sidebar-collapsed .shell,.review-mode .shell{grid-template-columns:minmax(0,1fr)}
-.sidebar-collapsed #sidebar,.review-mode #sidebar,.review-mode #toggleSidebar{display:none}#trajectoryOptions summary{display:none;cursor:pointer}
-#trajectoryOptions{min-width:0}#playbackDock{background:#fff}.cursorLabels{display:flex;flex-direction:column;gap:3px;text-align:right}
+.sidebar-collapsed #sidebar,.review-mode #sidebar,.review-mode #toggleSidebar{display:none}.plotOptions summary{display:none;cursor:pointer}
+.plotOptions{min-width:0}#playbackDock{background:#fff}.cursorLabels{display:flex;flex-direction:column;gap:3px;text-align:right}
 #cursorTimestamp{font:11px monospace;color:var(--muted)}.instantReadouts{display:none}
 .review-mode header,.review-mode .eyebrow,.review-mode .cards,.review-mode .reportOnly,.review-mode footer{display:none}
 .review-mode .shell{max-width:none;height:100dvh}.review-mode #sidebar{height:100dvh;min-height:0;overflow:auto}
@@ -18,9 +18,9 @@
 .review-mode h2{font-size:13px}.review-mode h2 small{font-size:10px;margin-left:6px}
 .review-mode .panelTitle button{font-size:11px;padding:5px 8px}
 .review-mode .trajectory,.review-mode .velocity,.review-mode .errors{flex:1;min-height:160px;height:0;overflow:hidden;border-radius:0 0 7px 7px}
-.review-mode .plotNote{display:none}.review-mode #trajectoryOptions{position:relative;margin-left:auto}
-.review-mode #trajectoryOptions summary{display:block;font-size:11px;padding:5px 8px;color:#445873;border:1px solid #d5deeb;border-radius:4px}
-.review-mode #trajectoryOptions[open] .controls{position:absolute;top:100%;right:0;width:285px;padding:12px;background:white;border:1px solid var(--border);box-shadow:0 5px 16px #22304a20;border-radius:5px;z-index:30}
+.review-mode .plotNote{display:none}.review-mode .plotOptions{position:relative;margin-left:auto}
+.review-mode .plotOptions summary{display:block;font-size:11px;padding:5px 8px;color:#445873;border:1px solid #d5deeb;border-radius:4px}
+.review-mode .plotOptions[open] .controls{position:absolute;top:100%;right:0;width:285px;padding:12px;background:white;border:1px solid var(--border);box-shadow:0 5px 16px #22304a20;border-radius:5px;z-index:30}
 .review-mode #candidates{max-height:65px;padding:4px;flex-shrink:0}
 .review-mode #playbackDock{flex-shrink:0;border:1px solid var(--border);border-radius:7px;overflow:hidden}
 .review-mode .playback{padding:8px 14px;border-top:0;gap:10px}.review-mode .playback input{min-width:60px}

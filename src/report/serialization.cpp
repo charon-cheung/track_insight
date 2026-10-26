@@ -60,8 +60,9 @@ Json makeAnalysis(const RunData& d,const Evaluation& e,const Config& c,const Dis
       {"frame",d.frame},{"base",d.base},{"log_compatible",d.log_compatible},
       {"pose_semantics","recorded localization estimate; not independent ground truth"},
       {"velocity_semantics","feedback minus command; body reference point; no lag correction"},
+      {"downstream_time_basis","bag_record"},
       {"cell_method","Left endpoint sample over bounded half-open cells; duration-weighted absolute P95"}}},
-    {"config",{{"topics",{{"plan",c.plan_topic},{"command",c.command_topic},{"feedback",c.feedback_topic},{"downstream",c.downstream_topic}}},
+    {"config",{{"topics",{{"plan",c.plan_topic},{"command",c.command_topic},{"tracking_raw",c.tracking_raw_topic},{"feedback",c.feedback_topic},{"downstream",c.downstream_topic}}},
       {"frames",{{"world",c.frame},{"base",c.base},{"command",c.command_frame}}},
       {"tf_gap_ns",std::to_string(c.tf_gap)},{"velocity_gap_ns",std::to_string(c.velocity_gap)},
       {"command_age_ns",std::to_string(c.command_age)},{"log_age_ns",std::to_string(c.log_age)},
@@ -73,7 +74,7 @@ Json makeAnalysis(const RunData& d,const Evaluation& e,const Config& c,const Dis
     {"topics",Json::array()},{"plans",Json::array()},{"tasks",Json::array()},
     {"requests",Json::array()},{"controller_revisions",Json::array()},{"paths",Json::array()},
     {"events",Json::array()},{"diagnostics",Json::array()},{"navigation_metrics",Json::object()},
-    {"raw",{{"poses",Json::array()},{"commands",Json::array()},{"feedback",Json::array()},{"downstream",Json::array()}}}};
+    {"raw",{{"tracking_raw",Json::array()},{"poses",Json::array()},{"commands",Json::array()},{"feedback",Json::array()},{"downstream",Json::array()}}}};
   for(const auto& o:clock.offsets)a["clock"]["offsets"].push_back({{"from_ns",std::to_string(o.from_ns)},{"seconds",o.seconds}});
   for(const auto& t:d.topics)a["topics"].push_back({{"name",t.name},{"type",t.type},{"count",t.count}});
   for(const auto& p:d.plans) {
@@ -107,7 +108,8 @@ Json makeAnalysis(const RunData& d,const Evaluation& e,const Config& c,const Dis
   for(const auto& v:d.commands)a["raw"]["commands"].push_back(velocity(v));
   for(const auto& v:d.feedback)a["raw"]["feedback"].push_back(velocity(v));
   for(const auto& v:d.downstream)a["raw"]["downstream"].push_back(velocity(v));
-  a["signals"]={{"commands",Json::array()},{"feedback",Json::array()},{"downstream",Json::array()}};
+  for(const auto& v:d.tracking_raw)a["raw"]["tracking_raw"].push_back(velocity(v));
+  a["signals"]={{"tracking_raw",Json::array()},{"commands",Json::array()},{"feedback",Json::array()},{"downstream",Json::array()}};
   auto signal=[&](const std::string& key,const std::vector<Velocity>& values,TimestampNs age,bool hold) {
     for(std::size_t i=0;i<values.size();++i) {
       const auto& v=values[i];TimestampNs end=v.stamp.ns;
@@ -121,6 +123,7 @@ Json makeAnalysis(const RunData& d,const Evaluation& e,const Config& c,const Dis
   };
   signal("commands",causalCommands(d.commands),c.command_age,true);signal("feedback",d.feedback,c.velocity_gap,false);
   signal("downstream",causalCommands(d.downstream),c.command_age,true);
+  signal("tracking_raw",causalCommands(d.tracking_raw),c.command_age,true);
   std::size_t request=0;
   for(const auto& event:d.events) {
     Json row={{"ns",std::to_string(event.ns)},{"time",relative(event.ns)},{"label",formatTimestamp(event.ns,clock)},
@@ -138,11 +141,12 @@ Json makeAnalysis(const RunData& d,const Evaluation& e,const Config& c,const Dis
   a["columns"]={{"tracking",Json::array({"time","x","y","yaw","projection_x","projection_y","lateral",
       "path_distance","endpoint_distance","yaw_error","valid","stage","ns","end_time","segment","progress","reason"})},
     {"velocity",Json::array({"time","cmd_vx","cmd_vy","cmd_omega","feedback_vx","feedback_vy","feedback_omega","valid","ns","end_time","reason"})}};
-  a["capabilities"]={{"trajectory",!d.poses.empty()},{"velocity",!d.commands.empty()&&!d.feedback.empty()},
+  a["capabilities"]={{"tracking_raw",!d.tracking_raw.empty()},{"trajectory",!d.poses.empty()},{"velocity",!d.commands.empty()&&!d.feedback.empty()},
     {"navigation",!e.tasks.empty()},{"log_evidence",d.log_compatible},
     {"confirmed_intervals",false},{"png_renderer","rsvg-convert"},{"threshold_assessment",c.lateral_threshold.has_value()||c.velocity_threshold.has_value()||c.angular_velocity_threshold.has_value()}};
   for(const auto& p:e.paths)if(p.interval.identity=="confirmed"&&p.interval.start_quality=="confirmed"&&p.interval.end_quality=="confirmed")
     a["capabilities"]["confirmed_intervals"]=true;
+  a["overview"]=makeOverview(a);
   return a;
 }
 }
