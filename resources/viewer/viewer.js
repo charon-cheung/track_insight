@@ -155,7 +155,7 @@
         name:p.interval.plan_id+' 实际',line:{color:'#c7a11a',width:2},hovertemplate:'%{text}<br>x %{x:.3f} · y %{y:.3f}<extra></extra>'});
       if($('showMarkers').checked) {
         const valid=p.tracking.filter(r=>r[10]);if(valid.length)traces.push({x:[valid[0][1],valid.at(-1)[1]],y:[valid[0][2],valid.at(-1)[2]],
-          mode:'markers+text',name:p.interval.plan_id+' 起终点',text:['起点','终点'],textposition:'top center',
+          mode:'markers+text',name:p.interval.plan_id+' 起终点',showlegend:false,text:['起点','终点'],textposition:'top center',
           customdata:[time(valid[0][0]),time(valid.at(-1)[0])],hovertemplate:'%{customdata}<extra></extra>',
           marker:{color:['#0b9f80','#df843d'],size:16.5,symbol:['star','circle']}});
       }
@@ -275,7 +275,7 @@
     const navigation=task?.id===key;
     range=navigation?[rel(task.start_ns),rel(task.end_ns)]:paths.length?[Math.min(...paths.map(p=>p.start)),Math.max(...paths.map(p=>p.end))]:[0,rel(A.meta.end_ns)];
     const title=$('selectionTitle');
-    title.dataset.report=key==='all'?'全部路径复盘':navigation?key+' · 导航总览':paths.length===1?(task?task.id+' · ':'')+paths[0].interval.plan_id+' · 轨迹跟踪分析':key+' · 导航总览';
+    title.dataset.report=key==='empty'?'暂无可显示的导航或路径':key==='all'?'全部路径复盘':navigation?key+' · 导航总览':paths.length===1?(task?task.id+' · ':'')+paths[0].interval.plan_id+' · 轨迹跟踪分析':key+' · 导航总览';
     title.dataset.review=!navigation&&paths.length===1?paths[0].interval.plan_id:title.dataset.report;
     title.textContent=title.dataset[document.body.classList.contains('review-mode')?'review':'report'];
     const plan=paths.length===1?A.plans.find(p=>p.id===paths[0].interval.plan_id):null;

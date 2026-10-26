@@ -16,7 +16,7 @@
     function syncFavorite() {
       lastSelected=api.selected;
       const active=favorites.has(api.selected),label=active?'取消星标':'加入星标';
-      star.disabled=!entries.has(api.selected);
+      star.disabled=!entries.has(api.selected)||entries.get(api.selected).hidden;
       star.classList.toggle('starred',active);star.setAttribute('aria-pressed',String(active));
       star.setAttribute('aria-label',label);
       star.title=label+(storageUnavailable?'（无法保存到浏览器，星标仅本次有效）':'');
@@ -24,19 +24,19 @@
     }
     function renderFavorites() {
       picker.replaceChildren(new Option('选择星标',''));
-      for(const [key,button] of entries)if(favorites.has(key))picker.add(new Option(button.dataset.review,key));
-      $('favoritePicker').hidden=favorites.size===0;
+      for(const [key,button] of entries)if(favorites.has(key)&&!button.hidden)picker.add(new Option(button.dataset.review,key));
+      $('favoritePicker').hidden=picker.options.length===1;
       syncFavorite();
     }
     star.onclick=()=>{
-      if(!entries.has(api.selected))return;
+      if(!entries.has(api.selected)||entries.get(api.selected).hidden)return;
       if(favorites.has(api.selected))favorites.delete(api.selected);else favorites.add(api.selected);
       try {localStorage.setItem(storageKey,JSON.stringify([...favorites]));storageUnavailable=false;}
       catch {storageUnavailable=true;}
       renderFavorites();
     };
     picker.onchange=()=>{
-      if(!favorites.has(picker.value))return;
+      if(!favorites.has(picker.value)||entries.get(picker.value)?.hidden)return;
       $('quickSelection').value=picker.value;
       $('quickSelection').dispatchEvent(new Event('change'));
     };
@@ -44,6 +44,7 @@
       if(lastSelected!==api.selected)syncFavorite();
     });
     renderFavorites();
+    return renderFavorites;
   }
   document.addEventListener('trackinsight:ready',()=>{
     const api=window.trackInsight,body=document.body,dock=$('playbackDock');
@@ -51,10 +52,22 @@
     const selection=$('quickSelection');
     for(const button of $('navigation').querySelectorAll('button')) {
       button.dataset.report=button.firstChild.textContent.trim();
-      button.dataset.review=api.analysis.paths.find(p=>p.interval.id===button.dataset.key)?.interval.plan_id||button.dataset.report;
+      const path=api.analysis.paths.find(p=>p.interval.id===button.dataset.key);
+      const task=api.analysis.tasks.find(t=>t.id===(path?.interval.navigation_id||button.dataset.key));
+      button.dataset.review=path?.interval.plan_id||button.dataset.report;
+      button.dataset.reportExcluded=String(['replaced','failed'].includes(task?.outcome));
       selection.add(new Option(button.dataset.report,button.dataset.key));
     }
+    const meta=api.analysis.meta;
+    const hiddenStorageKey='trackInsight:hidden:v1:'+JSON.stringify([meta.input_sha256,meta.start_ns,meta.end_ns]);
+    let removedSelections=new Set();
+    try {
+      const saved=JSON.parse(localStorage.getItem(hiddenStorageKey)||'[]');
+      const keys=new Set([...selection.options].map(option=>option.value));
+      if(Array.isArray(saved))removedSelections=new Set(saved.filter(key=>typeof key==='string'&&keys.has(key)));
+    } catch { /* Keep the report usable when browser storage is unavailable. */ }
     function updateSelectionButtons() {
+      $('deleteSelection').disabled=selection.selectedIndex<0;
       $('previousSelection').disabled=selection.selectedIndex<=0;
       $('nextSelection').disabled=selection.selectedIndex<0||selection.selectedIndex>=selection.options.length-1;
     }
@@ -68,7 +81,14 @@
     selection.onchange=()=>{
       updateSelectionButtons();
       const button=[...$('navigation').querySelectorAll('button')].find(b=>b.dataset.key===selection.value);
-      if(button)button.click();
+      if(button&&!button.hidden)button.click();
+    };
+    $('deleteSelection').onclick=()=>{
+      if(!body.classList.contains('review-mode')||selection.selectedIndex<0)return;
+      const index=selection.selectedIndex;removedSelections.add(api.selected);
+      try {localStorage.setItem(hiddenStorageKey,JSON.stringify([...removedSelections]));}
+      catch {$('deleteSelection').title='浏览器无法保存隐藏记录，本次刷新后可能恢复';}
+      updateNavigation(true,index);
     };
     const fields=[['position',['x (m)','y (m)','朝向 (rad)']],
       ['command',['vx (m/s)','vy (m/s)','ω (rad/s)']],['errors',['横向 (m)','路径距离 (m)','姿态 (rad)']]];
@@ -121,17 +141,31 @@
       $('toggleSidebar').textContent=collapsed?'展开导航':'收起导航';
       $('toggleSidebar').setAttribute('aria-expanded',String(!collapsed));scheduleResize();
     };
+    function updateNavigation(review,fallbackIndex=0) {
+      const labelMode=review?'review':'report';
+      $('selectionTitle').textContent=$('selectionTitle').dataset[labelMode];
+      selection.replaceChildren();
+      for(const button of $('navigation').querySelectorAll('button')) {
+        button.firstChild.textContent=button.dataset[labelMode];
+        button.hidden=button.dataset.reportExcluded==='true'||(review&&removedSelections.has(button.dataset.key));
+        if(!button.hidden)selection.add(new Option(button.dataset[labelMode],button.dataset.key));
+      }
+      for(const group of $('navigation').querySelectorAll('details.navigationTask')) {
+        group.hidden=[...group.querySelectorAll('button')].every(button=>button.hidden);
+      }
+      selection.value=api.selected;
+      selection.disabled=selection.options.length===0;
+      if(selection.selectedIndex<0) {
+        if(selection.options.length){selection.selectedIndex=Math.min(fallbackIndex,selection.options.length-1);selection.dispatchEvent(new Event('change'));}
+        else api.select([],'empty');
+      }
+      updateSelectionButtons();refreshFavorites();
+    }
     function setMode(review) {
       if(review===body.classList.contains('review-mode'))return;
       if(review)reportScroll=window.scrollY;
       body.classList.toggle('review-mode',review);
-      const labelMode=review?'review':'report';
-      $('selectionTitle').textContent=$('selectionTitle').dataset[labelMode];
-      for(const button of $('navigation').querySelectorAll('button')) {
-        button.firstChild.textContent=button.dataset[labelMode];
-        const option=[...selection.options].find(o=>o.value===button.dataset.key);
-        if(option)option.textContent=button.dataset[labelMode];
-      }
+      updateNavigation(review);
       (review?$('reviewWorkspace'):$('trajectoryPanel')).append(dock);
       $('trajectoryOptions').open=!review;
       for(const [id,active]of [['reportMode',!review],['reviewMode',review]]) {
@@ -142,6 +176,7 @@
     }
     $('reportMode').onclick=()=>setMode(false);$('reviewMode').onclick=()=>setMode(true);
     new ResizeObserver(scheduleResize).observe($('chartDeck'));
-    setMode(true);initFavorites(api);
+    const refreshFavorites=initFavorites(api);
+    setMode(true);
   },{once:true});
 })();

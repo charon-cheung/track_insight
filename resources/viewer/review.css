@@ -66,3 +66,6 @@
 #toggleFavorite:hover svg{stroke:#d97706}
 #toggleFavorite:disabled{opacity:.45;cursor:default}
 @media(max-width:900px){.viewToolbar{flex-wrap:wrap}.viewActions{margin-left:auto;gap:10px}}
+
+#deleteSelection{display:none}
+.review-mode #deleteSelection{display:inline-block}

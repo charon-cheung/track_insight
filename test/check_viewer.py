@@ -91,6 +91,66 @@ async def main():
             await select_key(keys[0]);await evaluate("document.getElementById('toggleFavorite').click()")
             assert (await evaluate(state))['hidden'],'Empty favorite list remains visible'
             await evaluate("document.getElementById('reviewMode').click()")
+        async def check_report_filter():
+            entries=await evaluate("[...document.querySelectorAll('#navigation button')].map(b=>{const p=trackInsight.analysis.paths.find(p=>p.interval.id===b.dataset.key),t=trackInsight.analysis.tasks.find(t=>t.id===(p?.interval.navigation_id||b.dataset.key));return {key:b.dataset.key,excluded:['replaced','failed'].includes(t?.outcome)}})")
+            eligible=[entry['key'] for entry in entries if not entry['excluded']]
+            excluded=[entry['key'] for entry in entries if entry['excluded']]
+            options="[...document.getElementById('quickSelection').options].map(o=>o.value)"
+            assert await evaluate(options)==eligible,'Default comprehensive list includes excluded cases'
+            for mode in ['reportMode','reviewMode']:
+                await evaluate("document.getElementById('"+mode+"').click()")
+                await asyncio.sleep(.2)
+                assert await evaluate(options)==eligible,'Mode switch restored excluded cases'
+                visible=await evaluate("[...document.querySelectorAll('#navigation button')].filter(b=>!b.hidden&&!b.closest('details[hidden]')).map(b=>b.dataset.key)")
+                assert visible==eligible,visible
+                starred=await evaluate("[...document.getElementById('favoriteSelection').options].map(o=>o.value)")
+                assert not set(starred)&set(excluded),'Excluded favorite visible'
+                if eligible:
+                    assert await evaluate('trackInsight.selected') in eligible,'Selection remained on excluded case'
+                    await evaluate("(()=>{const s=document.getElementById('quickSelection');s.selectedIndex=0;s.dispatchEvent(new Event('change'));})()")
+                    for index,key in enumerate(eligible):
+                        if index:await evaluate("document.getElementById('nextSelection').click()")
+                        await asyncio.sleep(.15)
+                        assert await evaluate('trackInsight.selected')==key,'Paging visited excluded case'
+                    assert await evaluate("document.getElementById('nextSelection').disabled")
+            await evaluate("document.getElementById('reportMode').click()")
+        async def check_delete_selection():
+            stored=await evaluate("Object.fromEntries(Object.entries(localStorage).filter(([key])=>key.startsWith('trackInsight:')))")
+            async def reload_report():
+                await call('Page.reload',{'ignoreCache':True});await asyncio.sleep(.3)
+                for _ in range(100):
+                    if await evaluate("Boolean(window.trackInsight)&&document.getElementById('favoriteSelection').options.length>0"):return
+                    await asyncio.sleep(.2)
+                raise AssertionError('Report did not initialize after reload')
+            try:
+                await evaluate("document.getElementById('reviewMode').click()")
+                keys=await evaluate("[...document.getElementById('quickSelection').options].map(o=>o.value)")
+                if len(keys)<2:return
+                key=keys[1]
+                await evaluate("(()=>{const s=document.getElementById('quickSelection');s.value="+json.dumps(key)+";s.dispatchEvent(new Event('change'));})()")
+                await asyncio.sleep(.2)
+                before=await evaluate("document.getElementById('cards').textContent")
+                await evaluate("if(document.getElementById('toggleFavorite').getAttribute('aria-pressed')!=='true')document.getElementById('toggleFavorite').click();document.getElementById('deleteSelection').click()")
+                await asyncio.sleep(.2)
+                expected=keys[2] if len(keys)>2 else keys[0]
+                assert await evaluate('trackInsight.selected')==expected,'Delete did not choose adjacent item'
+                state="(()=>{const key="+json.dumps(key)+";return {normal:[...document.getElementById('quickSelection').options].some(o=>o.value===key),starred:[...document.getElementById('favoriteSelection').options].some(o=>o.value===key)}})()"
+                assert await evaluate(state)=={'normal':False,'starred':False},'Deleted item remains in comprehensive dropdowns'
+                await evaluate("document.getElementById('reportMode').click()")
+                assert await evaluate(state)=={'normal':True,'starred':True},'Delete affected report mode'
+                assert await evaluate("getComputedStyle(document.getElementById('deleteSelection')).display")=='none'
+                await evaluate("(()=>{const s=document.getElementById('favoriteSelection');s.value="+json.dumps(key)+";s.dispatchEvent(new Event('change'));})()")
+                await asyncio.sleep(.2)
+                assert await evaluate("document.getElementById('cards').textContent")==before,'Report metrics changed'
+                await evaluate("document.getElementById('reviewMode').click()")
+                assert await evaluate(state)=={'normal':False,'starred':False}
+                await reload_report()
+                assert await evaluate(state)=={'normal':False,'starred':False},'Deleted item returned after reload'
+                await evaluate("document.getElementById('reportMode').click()")
+                assert await evaluate(state)=={'normal':True,'starred':True},'Report lost item after reload'
+            finally:
+                await evaluate("(()=>{for(const key of Object.keys(localStorage))if(key.startsWith('trackInsight:'))localStorage.removeItem(key);for(const [key,value] of Object.entries("+json.dumps(stored)+"))localStorage.setItem(key,value);})()")
+                await reload_report()
         await call("Runtime.enable")
         await call("Network.enable")
         await call("Network.emulateNetworkConditions",{"offline":True,"latency":0,"downloadThroughput":0,"uploadThroughput":0})
@@ -103,9 +163,11 @@ async def main():
         assert await evaluate("Boolean(document.getElementById('reviewMode'))"),"Review mode selector absent"
         assert await evaluate("document.body.classList.contains('review-mode')&&document.getElementById('reviewMode').getAttribute('aria-pressed')==='true'"),'Default view is not review mode'
         await check_favorites()
+        await check_report_filter()
+        await check_delete_selection()
         await evaluate("document.getElementById('reportMode').click()")
         # Single-path tasks have one shared entry; multi-path and empty tasks retain their identity.
-        navigation_cases=await evaluate("trackInsight.analysis.tasks.map(t=>({id:t.id,paths:trackInsight.analysis.paths.filter(p=>p.interval.navigation_id===t.id).map(p=>p.interval.id)}))")
+        navigation_cases=await evaluate("trackInsight.analysis.tasks.filter(t=>!['replaced','failed'].includes(t.outcome)).map(t=>({id:t.id,paths:trackInsight.analysis.paths.filter(p=>p.interval.navigation_id===t.id).map(p=>p.interval.id)}))")
         tested=set()
         for task in navigation_cases:
             kind=min(len(task['paths']),2)
@@ -210,6 +272,6 @@ async def main():
         assert not external,external
         assert not errors,errors
         print(json.dumps({"status":"passed","initial":initial,"offline":True,"timezone_independent":True,
-                          "playback":True,"favorites_add_remove_reload_navigate":True,"step_50ms_both_modes":True,"step_pauses_and_clamps":True,"range_link":True,"review_mode":True,"shared_cursor":True,
+                          "playback":True,"favorites_add_remove_reload_navigate":True,"report_outcome_filter":True,"comprehensive_delete_persist_report_preserved":True,"step_50ms_both_modes":True,"step_pauses_and_clamps":True,"range_link":True,"review_mode":True,"shared_cursor":True,
                           "navigation_cases":sorted(tested),"state_preserved":True,"viewports":["1366x768","1920x1080"],"errors":len(errors)},ensure_ascii=False))
 asyncio.run(main())
