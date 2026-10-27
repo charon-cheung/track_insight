@@ -21,10 +21,10 @@
 <div id="playbackDock"><div class="playback"><button id="stepBack" title="后退 50 ms 并暂停" aria-label="步退 50 毫秒">步退</button><button id="play">播放</button><button id="stepForward" title="前进 50 ms 并暂停" aria-label="步进 50 毫秒">步进</button><select id="rate" aria-label="播放倍速"><option>1×</option><option>2×</option></select>
 <input id="timeline" aria-label="轨迹时间轴" type="range" min="0" max="10000" value="0" step="1"><div class="cursorLabels"><span id="cursorTime"></span><span id="cursorTimestamp"></span></div></div>
 <div id="instantReadouts" class="instantReadouts"></div><div id="cursorReadout" class="readout"></div></div></section>
-<section class="panel"><div class="panelTitle"><h2>指令与速度反馈 <small>vx · vy · ω</small></h2><details id="velocityOptions" class="plotOptions" open><summary>显示选项</summary><div class="controls">
+<section class="panel" id="velocityPanel"><div class="panelTitle"><h2 id="velocityTitle">指令与速度反馈 <small>vx · vy · ω</small></h2><details id="velocityOptions" class="plotOptions" open><summary>显示选项</summary><div class="controls">
 <label><input type="checkbox" data-velocity-group="command" checked>指令</label><label><input type="checkbox" data-velocity-group="feedback" checked>反馈</label>
-<label><input type="checkbox" data-velocity-group="tracking_raw" checked>原始指令</label><label><input type="checkbox" data-velocity-group="downstream" checked>平滑输出（record 时间）</label>
-<button id="resetTime">完整时间范围</button><button id="exportVelocity">PNG</button></div></details></div>
+<label><input type="checkbox" data-velocity-group="tracking_raw">原始指令</label><label><input type="checkbox" data-velocity-group="downstream" checked>平滑输出（record 时间）</label>
+<button id="resetTime">完整时间范围</button><button id="exportVelocity">PNG</button></div></details><button id="maximizeVelocity" type="button" aria-controls="velocityView" aria-expanded="false">最大化</button></div>
 <div id="velocity" class="velocity"></div><p class="plotNote">指令使用因果保持，反馈有界插值；残差未做时延补偿。图例可切换曲线，拖动可选择时间范围。</p></section>
 <section class="panel"><div class="panelTitle"><h2>跟踪误差</h2><button id="exportErrors">PNG</button></div><div id="errors" class="errors"></div></section>
 </div></div>
@@ -34,5 +34,6 @@
 <section class="panel reportOnly"><div class="panelTitle"><h2>事件与日志</h2><select id="eventType"><option value="">全部类别</option><option value="navigation">导航事件</option><option value="data_quality">数据质量</option><option value="tracking">跟踪异常</option><option value="observation">最大值定位</option></select></div>
 <div class="eventLayout"><div id="events"></div><pre id="logDetail">选择事件查看证据、日志行号和原始内容。</pre></div></section>
 <footer id="footer"></footer></main></div>
+<dialog id="velocityView" aria-labelledby="velocityTitle"></dialog>
 <script>__TRACK_PLOTLY__</script><script type="application/json" id="analysis">__TRACK_DATA__</script><script>__TRACK_REVIEW_SCRIPT__</script><script>__TRACK_OVERVIEW_SCRIPT__</script><script>__TRACK_SCRIPT__</script>
 </body></html>

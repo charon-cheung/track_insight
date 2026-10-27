@@ -57,10 +57,41 @@ async def main():
                 assert bounds['actual']==bounds['expected'],bounds
                 assert await evaluate("trackInsight.selected")==selected,'Step changed selected path'
             await evaluate("(()=>{const p=trackInsight.analysis.paths.find(p=>p.interval.id===trackInsight.selected);trackInsight.setCursor(p.start+1);document.getElementById('rate').value='1×';})()")
+        async def check_velocity_maximize():
+            snapshot="({selected:trackInsight.selected,cursor:trackInsight.cursor,range:document.getElementById('velocity').layout.xaxis.range.slice(),visible:document.getElementById('velocity').data.map(t=>t.visible)})"
+            for mode,width,height in [('reviewMode',1366,768),('reportMode',1920,1080)]:
+                await call('Emulation.setDeviceMetricsOverride',{'width':width,'height':height,'deviceScaleFactor':1,'mobile':False})
+                await evaluate("(async()=>{document.getElementById('"+mode+"').click();const p=trackInsight.analysis.paths[0];await trackInsight.select([p],p.interval.id);trackInsight.setCursor((p.start+p.end)/2);await Plotly.relayout(document.getElementById('velocity'),{'xaxis.range':[p.start+.1,p.end-.1]});document.querySelector('[data-velocity-group=feedback]').click();document.getElementById('maximizeVelocity').scrollIntoView({block:'center'});})()")
+                await asyncio.sleep(.25)
+                before=await evaluate(snapshot)
+                scroll=await evaluate('window.scrollY')
+                await evaluate("document.getElementById('maximizeVelocity').click()")
+                await asyncio.sleep(.3)
+                state=await evaluate("(()=>{const d=document.getElementById('velocityView'),g=document.getElementById('velocity').getBoundingClientRect();document.getElementById('quickSelection').focus();return {modal:d.matches(':modal'),onlyVelocity:d.querySelectorAll('.panel').length===1&&d.contains(document.getElementById('velocity')),focusInside:d.contains(document.activeElement),width:g.width,height:g.height,ticks:document.getElementById('velocity').layout.xaxis.tickvals.length}})()")
+                assert state['modal'] and state['onlyVelocity'] and state['focusInside'],state
+                assert state['width']>width*.94 and state['height']>height*.8 and state['ticks']==6,state
+                assert await evaluate(snapshot)==before,'Maximize reset plot state'
+                # Zoom and curve choices made in the focused view must survive returning.
+                await evaluate("(async()=>{document.querySelector('[data-velocity-group=feedback]').click();const g=document.getElementById('velocity'),r=g.layout.xaxis.range;await Plotly.relayout(g,{'xaxis.range':[r[0]+.1,r[1]-.1]});})()")
+                expected=await evaluate(snapshot)
+                if mode=='reviewMode':
+                    screenshot=await call('Page.captureScreenshot',{'format':'png'})
+                    Path(args.screenshot).with_name(Path(args.screenshot).stem+'_maximized.png').write_bytes(base64.b64decode(screenshot['data']))
+                    await evaluate("document.getElementById('maximizeVelocity').click()")
+                else:
+                    await call('Input.dispatchKeyEvent',{'type':'keyDown','key':'Escape','code':'Escape','windowsVirtualKeyCode':27})
+                    await call('Input.dispatchKeyEvent',{'type':'keyUp','key':'Escape','code':'Escape','windowsVirtualKeyCode':27})
+                await asyncio.sleep(.3)
+                assert not await evaluate("document.getElementById('velocityView').open")
+                assert await evaluate("document.getElementById('velocityPanel').parentElement.id")=='chartDeck'
+                assert await evaluate(snapshot)==expected,'Returning reset plot state'
+                assert abs(await evaluate('window.scrollY')-scroll)<=2,'Returning lost scroll position'
+            await evaluate("document.getElementById('reviewMode').click();document.getElementById('resetTime').click()")
+            await call('Emulation.setDeviceMetricsOverride',{'width':1600,'height':1100,'deviceScaleFactor':1,'mobile':False})
         async def check_velocity_options():
             saved=await evaluate("({key:trackInsight.selected,cursor:trackInsight.cursor})")
             for key in ['command','feedback','tracking_raw','downstream']:
-                state=await evaluate("(async()=>{const key="+json.dumps(key)+",g=document.getElementById('velocity'),input=document.querySelector('[data-velocity-group=\"'+key+'\"]'),before={cursor:trackInsight.cursor,range:g.layout.xaxis.range.slice()};if(input.disabled)return {disabled:true};input.click();await new Promise(r=>setTimeout(r,100));return {before,after:{cursor:trackInsight.cursor,range:g.layout.xaxis.range.slice()},checked:input.checked,visible:g.data.filter(t=>t.legendgroup===key).map(t=>t.visible)};})()")
+                state=await evaluate("(async()=>{const key="+json.dumps(key)+",g=document.getElementById('velocity'),input=document.querySelector('[data-velocity-group=\"'+key+'\"]'),before={cursor:trackInsight.cursor,range:g.layout.xaxis.range.slice()};if(input.disabled)return {disabled:true};if(!input.checked)input.click();input.click();await new Promise(r=>setTimeout(r,100));return {before,after:{cursor:trackInsight.cursor,range:g.layout.xaxis.range.slice()},checked:input.checked,visible:g.data.filter(t=>t.legendgroup===key).map(t=>t.visible)};})()")
                 if state.get('disabled'):continue
                 assert not state['checked'] and all(v=='legendonly' for v in state['visible']),state
                 assert state['before']==state['after'],state
@@ -88,7 +119,7 @@ async def main():
                 assert row[5] in raw
                 assert abs(row[0]-(int(row[5])-int(state['origin']))/1e9)<1e-9
             for axis,trace in enumerate(state['traces']):
-                assert trace['line']['color']=='#9467bd' and 'record' in trace['name']
+                assert trace['line']['color']=='#FFD700' and 'record' in trace['name']
                 for x,y,text in zip(trace['x'],trace['y'],trace['text']):
                     if x is None:continue
                     assert y==samples[x][axis+1]
@@ -227,6 +258,8 @@ async def main():
         else:raise AssertionError(await evaluate("document.getElementById('failureBanner').textContent"))
         assert await evaluate("Boolean(document.getElementById('reviewMode'))"),"Review mode selector absent"
         assert await evaluate("document.body.classList.contains('review-mode')&&document.getElementById('reviewMode').getAttribute('aria-pressed')==='true'"),'Default view is not review mode'
+        assert await evaluate("!document.querySelector('[data-velocity-group=tracking_raw]').checked&&document.getElementById('velocity').data.filter(t=>t.legendgroup==='tracking_raw').every(t=>t.visible==='legendonly')"),'Raw commands must be hidden by default'
+        await check_velocity_maximize()
         await check_velocity_options()
         await check_downstream()
         await check_overview()

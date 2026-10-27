@@ -23,7 +23,7 @@
     paper_bgcolor:'white',plot_bgcolor:'white',margin:{l:68,r:30,t:24,b:45},
     legend:{orientation:'h',y:1.1,x:0},hovermode:'x unified',dragmode:'zoom'};
   function ticks(bounds) {
-    const count=document.body.classList.contains('review-mode')?3:6;
+    const count=document.body.classList.contains('review-mode')&&!document.body.classList.contains('velocity-maximized')?3:6;
     const values=Array.from({length:count},(_,i)=>bounds[0]+(bounds[1]-bounds[0])*i/(count-1));
     return {tickmode:'array',tickvals:values,ticktext:values.map(t=>time(t,false)),gridcolor:'#e8edf5',zeroline:false};
   }
@@ -198,7 +198,7 @@
           mode:'lines',name:['指令 · '+A.config.topics.command,'反馈','原始指令','平滑输出 · '+A.config.topics.downstream+'<br>（record 时间）'][group],
           legendgroup:key,visible:velocityControls[key].checked?true:'legendonly',showlegend:p===selected[0]&&axis===0,
           xaxis:axis?'x'+(axis+1):'x',yaxis:axis?'y'+(axis+1):'y',
-          line:{color:['#2473d6','#e67b2f','#000000','#9467bd'][group],width:1.5,shape:group===1?'linear':'hv'}});
+          line:{color:['#2473d6','#009E73','#000000','#FFD700'][group],width:1.5,dash:group===1?'dash':'solid',shape:group===1?'linear':'hv'}});
       }
       const tr=reduce(p.tracking,[6,7,9],10,13);
       for(let axis=0;axis<3;axis++) {

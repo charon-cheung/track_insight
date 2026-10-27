@@ -51,7 +51,7 @@ void axes(Canvas& c,const Axis& a,const DisplayClock* clock=nullptr) {
 }
 template<class Valid,class X,class Y>
 void polyline(Canvas& c,const Json& rows,const Axis& a,const std::string& color,Valid valid,X x,Y y,
-              bool time_series=false,bool step=false) {
+              bool time_series=false,bool step=false,const std::string& dash="") {
   std::ostringstream path;bool connected=false;double previous_end=0,previous_y=0;
   for(const auto& r:rows) {
     if(!valid(r)){connected=false;continue;}
@@ -61,7 +61,9 @@ void polyline(Canvas& c,const Json& rows,const Axis& a,const std::string& color,
     path<<(connected?" L ":" M ")<<a.px(xv)<<' '<<a.py(yv);connected=true;previous_y=yv;
     if(time_series)previous_end=r.at(r.size()==17?13:r.size()==8?6:9).get<double>();
   }
-  c.out<<"<path d=\""<<path.str()<<"\" stroke=\""<<color<<"\" stroke-width=\"2\" fill=\"none\"/>";
+  c.out<<"<path d=\""<<path.str()<<"\" stroke=\""<<color<<"\" stroke-width=\"2\"";
+  if(!dash.empty())c.out<<" stroke-dasharray=\""<<dash<<"\"";
+  c.out<<" fill=\"none\"/>";
 }
 std::string trajectory(const Json& a,const Json& p,const Json& plan,const DisplayClock& clock) {
   const auto& rows=p.at("tracking");const auto& points=plan.at("poses");
@@ -138,9 +140,9 @@ std::string series(const Json& a,const Json& p,const DisplayClock& clock,bool er
   }
   const std::vector<std::string> names=error?std::vector<std::string>{"Signed lateral (m)","Distance to segment (m)","Target yaw error (rad)"}:
     std::vector<std::string>{"vx (m/s)","vy (m/s)","omega (rad/s)"};
-  if(!error){c.text(155,123,"Blue: command "+a["config"]["topics"]["command"].get<std::string>(),14,"#2274e0");c.text(600,123,"Orange: odometry feedback",14,"#e47a2c");}
+  if(!error){c.text(155,123,"Blue: command "+a["config"]["topics"]["command"].get<std::string>(),14,"#2274e0");c.text(600,123,"Green: odometry feedback",14,"#009E73");}
   if(!error&&!tracking_raw.empty())c.text(1000,123,"Black: tracking raw command",14,"#000000");
-  if(!error&&!downstream.empty())c.text(155,145,"Purple: "+a["config"]["topics"]["downstream"].get<std::string>()+" (bag record time)",14,"#9467bd");
+  if(!error&&!downstream.empty())c.text(155,145,"Yellow: "+a["config"]["topics"]["downstream"].get<std::string>()+" (bag record time)",14,"#FFD700");
   for(int panel=0;panel<3;++panel) {
     double lo=0,hi=0;std::size_t count=0;const int index=error?(panel==0?6:panel==1?7:9):panel+1;
     auto valid=[&](const Json& r){return r[error?10:7].get<bool>()&&!r[index].is_null();};
@@ -159,9 +161,9 @@ std::string series(const Json& a,const Json& p,const DisplayClock& clock,bool er
       else {
         auto ok=[](const Json& r){return r[4].get<bool>();};
         polyline(c,commands,ax,"#2274e0",ok,x,[&](const Json& r){return r[index].get<double>();},true,true);
-        polyline(c,feedback,ax,"#e47a2c",ok,x,[&](const Json& r){return r[index].get<double>();},true);
+        polyline(c,feedback,ax,"#009E73",ok,x,[&](const Json& r){return r[index].get<double>();},true,false,"6 4");
         if(!tracking_raw.empty())polyline(c,tracking_raw,ax,"#000000",ok,x,[&](const Json& r){return r[index].get<double>();},true,true);
-        if(!downstream.empty())polyline(c,downstream,ax,"#9467bd",ok,x,[&](const Json& r){return r[index].get<double>();},true,true);
+        if(!downstream.empty())polyline(c,downstream,ax,"#FFD700",ok,x,[&](const Json& r){return r[index].get<double>();},true,true);
       }
     }else c.text(400,ax.y+95,error&&panel==2?"Unavailable: no verified target-yaw evidence":"Unavailable: no valid aligned data",18);
   }

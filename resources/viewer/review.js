@@ -120,7 +120,7 @@
     async function resizePlots() {
       if(body.classList.contains('report-overview'))return;
       await Promise.all(graphs.map(id=>Plotly.Plots.resize($(id))));
-      const count=body.classList.contains('review-mode')?3:6;
+      const count=body.classList.contains('review-mode')&&!body.classList.contains('velocity-maximized')?3:6;
       for(const id of ['velocity','errors']) {
         const patch={};
         for(let i=1;i<=3;i++) {
@@ -137,6 +137,23 @@
         $('failureBanner').hidden=false;$('failureBanner').textContent='图表布局更新失败：'+error.message;
       }));
     }
+    const velocityView=$('velocityView'),velocityPanel=$('velocityPanel'),maximizeVelocity=$('maximizeVelocity');
+    const velocityParent=velocityPanel.parentNode,velocityNext=velocityPanel.nextSibling;
+    let velocityScroll=0;
+    maximizeVelocity.onclick=()=>{
+      if(velocityView.open){velocityView.close();return;}
+      velocityScroll=window.scrollY;
+      if($('play').textContent==='暂停')$('play').click();
+      velocityView.append(velocityPanel);body.classList.add('velocity-maximized');
+      maximizeVelocity.textContent='返回';maximizeVelocity.setAttribute('aria-expanded','true');
+      velocityView.showModal();scheduleResize();
+    };
+    velocityView.addEventListener('close',()=>{
+      velocityParent.insertBefore(velocityPanel,velocityNext);body.classList.remove('velocity-maximized');
+      maximizeVelocity.textContent='最大化';maximizeVelocity.setAttribute('aria-expanded','false');
+      maximizeVelocity.focus({preventScroll:true});window.scrollTo(0,velocityScroll);scheduleResize();
+    });
+    new ResizeObserver(scheduleResize).observe(velocityView);
     $('toggleSidebar').onclick=()=>{
       const collapsed=body.classList.toggle('sidebar-collapsed');
       $('toggleSidebar').textContent=collapsed?'展开导航':'收起导航';

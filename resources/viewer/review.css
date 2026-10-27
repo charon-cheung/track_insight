@@ -69,3 +69,12 @@
 
 #deleteSelection{display:none}
 .review-mode #deleteSelection{display:inline-block}
+
+body.velocity-maximized{overflow:hidden}
+#velocityView{width:100vw;height:100dvh;max-width:none;max-height:none;margin:0;padding:12px;border:0;background:#f3f5f8;color:inherit;overflow:hidden}
+#velocityView[open]{display:flex}
+#velocityView::backdrop{background:#f3f5f8}
+#velocityView #velocityPanel{display:flex;flex-direction:column;flex:1;min-width:0;min-height:0;margin:0;overflow:visible}
+#velocityView .panelTitle{height:auto;min-height:54px;flex-shrink:0;flex-wrap:wrap;padding:12px 18px}
+#velocityView #velocity{flex:1;height:0;min-height:0;overflow:hidden}
+#velocityView .plotNote{display:none}

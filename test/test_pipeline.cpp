@@ -153,10 +153,10 @@ TEST(Pipeline, DownstreamUsesRecordTimeDespiteReusedOrStaleHeaders) {
       const auto output=f.root/"downstream_report";ASSERT_EQ(renderReport(analysis,output,TRACK_INSIGHT_RESOURCES),0);
       const auto svg=readText(output/"figures/P1_velocity.svg");
       EXPECT_NE(svg.find("/ctrl/velocity/navi/clct (bag record time)"),std::string::npos);
-      EXPECT_NE(svg.find("stroke=\"#9467bd\""),std::string::npos);
+      EXPECT_NE(svg.find("stroke=\"#FFD700\""),std::string::npos);
       auto legacy=analysis;legacy["meta"].erase("downstream_time_basis");
       ASSERT_EQ(renderReport(legacy,output,TRACK_INSIGHT_RESOURCES,true),0);
-      EXPECT_EQ(readText(output/"figures/P1_velocity.svg").find("stroke=\"#9467bd\""),std::string::npos);
+      EXPECT_EQ(readText(output/"figures/P1_velocity.svg").find("stroke=\"#FFD700\""),std::string::npos);
     }
   }
 }
