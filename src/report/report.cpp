@@ -62,13 +62,16 @@ void checkOwned(const fs::path& path) {
   }
 }
 }
+void validateReportOutput(const fs::path& output,bool replace) {
+  if(output==output.root_path())throw std::runtime_error("invalid output root");
+  checkOwned(output);
+  if(fs::exists(output)&&!fs::is_empty(output)&&!replace)throw std::runtime_error("output already exists; use --replace for an owned report");
+}
 int renderReport(Json analysis,const fs::path& requested,const fs::path& resources,bool replace,
-                 const std::function<void(double)>& progress) {
+                 const std::function<void(double)>& progress,const std::string& archive_name) {
   if(progress)progress(0);
   validate(analysis);analysis["overview"]=makeOverview(analysis);const auto output=fs::absolute(requested).lexically_normal();
-  if(output==output.root_path())throw std::runtime_error("invalid output root");
-  if(fs::exists(output)&&!fs::is_empty(output)&&!replace)throw std::runtime_error("output already exists; use --replace for an owned report");
-  checkOwned(output);fs::create_directories(output.parent_path());
+  validateReportOutput(output,replace);fs::create_directories(output.parent_path());
   const auto lock=output.string()+".track_insight.lock";
   if(!fs::create_directory(lock))throw std::runtime_error("another generation holds the output lock");
   const auto staging=output.string()+".track_insight.stage."+std::to_string(getpid());
@@ -100,6 +103,13 @@ int renderReport(Json analysis,const fs::path& requested,const fs::path& resourc
     if(progress)progress(.9);
     std::string payload=analysis.dump();replaceAll(payload,"<","\\u003c");replaceAll(payload,">","\\u003e");replaceAll(payload,"&","\\u0026");
     std::string html=readText(resources/"viewer"/"index.html");
+    std::string archive_link;
+    if(!archive_name.empty()) {
+      auto label=archive_name;replaceAll(label,"&","&amp;");replaceAll(label,"<","&lt;");
+      replaceAll(label,">","&gt;");replaceAll(label,"\"","&quot;");
+      archive_link="<a id=\"archiveHome\" href=\"../../index.html\" title=\""+label+
+        "\" style=\"font-size:12px;color:#2473d6;white-space:nowrap;text-decoration:none\">测试总览</a>";
+    }
     replaceAll(html,"__TRACK_STYLE__",readText(resources/"viewer"/"viewer.css"));
     replaceAll(html,"__TRACK_PLOTLY__",readText(resources/"viewer"/"plotly.min.js"));
     replaceAll(html,"__TRACK_OVERVIEW_STYLE__",readText(resources/"viewer"/"overview.css"));
@@ -108,6 +118,9 @@ int renderReport(Json analysis,const fs::path& requested,const fs::path& resourc
     replaceAll(html,"__TRACK_REVIEW_STYLE__",readText(resources/"viewer"/"review.css"));
     replaceAll(html,"__TRACK_REVIEW_SCRIPT__",readText(resources/"viewer"/"review.js"));
     replaceAll(html,"__TRACK_DATA__",payload);
+    const std::string archive_slot="__TRACK_ARCHIVE_LINK__";const auto slot=html.find(archive_slot);
+    if(slot==std::string::npos)throw std::runtime_error("report template is missing its archive slot");
+    html.replace(slot,archive_slot.size(),archive_link);
     writeText(fs::path(staging)/"report.html",html);
     for(const auto& name:{"analysis.json","metrics.json","metrics.csv","report.html"})manifest["files"].push_back(name);
     writeText(fs::path(staging)/".track_insight","Track Insight report v1\n");
