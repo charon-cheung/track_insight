@@ -11,7 +11,7 @@ void validateReportOutput(const std::filesystem::path& output,bool replace);
 int renderReport(Json analysis,const std::filesystem::path& output,
                  const std::filesystem::path& resources,bool replace=false,
                  const std::function<void(double)>& progress={},const std::string& archive_name={});
-std::vector<std::string> writeFigures(const Json& analysis,const std::filesystem::path& output,
+std::vector<std::string> writeFigures(const Json& analysis,const Json& style,const std::filesystem::path& output,
                                      std::vector<std::string>& failures,const std::function<void(double)>& progress={});
 std::string readText(const std::filesystem::path& path);
 void writeText(const std::filesystem::path& path,const std::string& text);

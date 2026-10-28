@@ -1,11 +1,14 @@
 'use strict';
 (() => {
   const A=JSON.parse(document.getElementById('analysis').textContent);
+  const style=JSON.parse(document.getElementById('plotStyle').textContent),trajectoryStyle=style.trajectory;
+  const velocityStyles=style.velocity.series;
   const $=id=>document.getElementById(id), origin=BigInt(A.clock.origin_ns);
   const name={goal_position_error:'任务终点位置误差',goal_yaw_error:'任务终点姿态误差',stopped_residual_error:'停车残差',stopped_drift:'停车漂移',settling_time:'结果后稳定时间',lateral:'横向误差',path_distance:'路径距离',endpoint_distance:'路径终点距离',
     yaw_error:'目标姿态误差',vx_residual:'vx 反馈 − 指令',vy_residual:'vy 反馈 − 指令',
     omega_residual:'ω 反馈 − 指令',speed_vector_residual:'平面速度残差'};
   const velocityControls=Object.fromEntries([...$('velocityOptions').querySelectorAll('input')].map(input=>[input.dataset.velocityGroup,input]));
+  for(const s of velocityStyles)velocityControls[s.key].checked=s.default_visible;
   const fmt=(v,d=3)=>v===null||v===undefined?'—':Number(v).toFixed(d);
   const ns=t=>origin+BigInt(Math.round(t*1e9));
   const rel=s=>Number(BigInt(s)-origin)/1e9;
@@ -28,7 +31,7 @@
     return {tickmode:'array',tickvals:values,ticktext:values.map(t=>time(t,false)),gridcolor:'#e8edf5',zeroline:false};
   }
   function badgeText(p) {
-    const i=p.interval;return i.identity==='confirmed'&&i.start_quality==='confirmed'&&i.end_quality==='confirmed'?'已确认执行区间':'推定执行区间';
+    const i=p.interval;return i.identity==='confirmed'&&i.start_quality==='confirmed'&&i.end_quality==='confirmed'?'已确认执行区间':'';
   }
   function button(label,small,key,paths,group=false,parent=$('navigation')) {
     const b=document.createElement('button');b.className=group?'navGroup':'';
@@ -145,7 +148,7 @@
     const traces=[],showAll=$('multiPlans').checked;
     const plans=showAll?A.plans.filter(p=>p.valid):A.plans.filter(p=>selected.some(s=>s.interval.plan_id===p.id));
     if($('showPlans').checked)for(const [index,p]of plans.entries())traces.push({x:p.poses.map(r=>r[0]),y:p.poses.map(r=>r[1]),
-      mode:'lines',name:p.id+' 规划',line:{color:['#2473d6','#937bc0','#8d9e57','#94a5b6'][index%4],width:2},
+      mode:'lines',name:p.id+' '+trajectoryStyle.planned.label,line:{color:trajectoryStyle.plan_palette[index%trajectoryStyle.plan_palette.length],width:2},
       hovertemplate:p.id+'<br>x %{x:.3f} · y %{y:.3f}<extra></extra>'});
     for(const p of selected) {
       const rows=reduce(p.tracking,[1,2,6,7],10,13);
@@ -153,24 +156,24 @@
         const stamp=BigInt(r[12]),seconds=stamp/1000000000n,millis=stamp%1000000000n/1000000n;
         return time(r[0])+'<br>Timestamp: '+seconds+'.'+millis.toString().padStart(3,'0');
       }),mode:'lines',
-        name:p.interval.plan_id+' 实际',line:{color:'#c7a11a',width:2},hovertemplate:'%{text}<br>x %{x:.3f} · y %{y:.3f}<extra></extra>'});
+        name:p.interval.plan_id+' '+trajectoryStyle.actual.label,line:{color:trajectoryStyle.actual.color,width:2},hovertemplate:'%{text}<br>x %{x:.3f} · y %{y:.3f}<extra></extra>'});
       if($('showMarkers').checked) {
         const valid=p.tracking.filter(r=>r[10]);
         if(valid.length&&$('showDirections').checked)for(const [index,r]of [valid[0],valid.at(-1)].entries()) {
           if(!Number.isFinite(r[3]))continue;
           traces.push({x:[r[1]],y:[r[2]],mode:'lines',name:index?'终点朝向':'起点朝向',
-            meta:{endpoint_pose:r.slice(1,4)},line:{color:index?'#df843d':'#0b9f80',width:4},
+            meta:{endpoint_pose:r.slice(1,4)},line:{color:trajectoryStyle[index?'end':'start'].color,width:4},
             showlegend:false,hoverinfo:'skip'});
         }
         if(valid.length)traces.push({x:[valid[0][1],valid.at(-1)[1]],y:[valid[0][2],valid.at(-1)[2]],
-          mode:'markers+text',name:p.interval.plan_id+' 起终点',showlegend:false,text:['起点','终点'],textposition:'top center',
+          mode:'markers+text',name:p.interval.plan_id+' 起终点',showlegend:false,text:[trajectoryStyle.start.label,trajectoryStyle.end.label],textposition:'top center',
           customdata:[time(valid[0][0]),time(valid.at(-1)[0])],hovertemplate:'%{customdata}<extra></extra>',
-          marker:{color:['#0b9f80','#df843d'],size:16.5,symbol:['star','circle']}});
+          marker:{color:[trajectoryStyle.start.color,trajectoryStyle.end.color],size:trajectoryStyle.marker_size,symbol:[trajectoryStyle.start.symbol,trajectoryStyle.end.symbol]}});
       }
     }
     traces.push({x:[],y:[],mode:'lines+markers',name:'位置与投影',line:{color:'#e36260',dash:'dot'},
       marker:{size:10,color:['#facc15','#e36260']},showlegend:false,hoverinfo:'skip'});
-    traces.push({x:[],y:[],mode:'lines',name:'机器人方向',line:{color:'#184581',width:4},showlegend:false,hoverinfo:'skip'});
+    traces.push({x:[],y:[],mode:'lines',name:'机器人方向',line:{color:trajectoryStyle.direction,width:4},showlegend:false,hoverinfo:'skip'});
     await Plotly.react($('trajectory'),traces,{...common,hovermode:'closest',margin:{l:65,r:35,t:30,b:48},
       xaxis:{title:A.meta.frame+' x (m)',gridcolor:'#e8edf5',zeroline:false},
       yaxis:{title:A.meta.frame+' y (m)',scaleanchor:'x',scaleratio:1,gridcolor:'#e8edf5',zeroline:false},
@@ -187,30 +190,30 @@
     const velocity=[],errors=[];
     for(const p of selected) {
       for(let group=0;group<4;group++) {
-        const source=A.signals?.[['commands','feedback','tracking_raw','downstream'][group]];
+        const presentation=velocityStyles[group],source=A.signals?.[presentation.signal];
         if(group>=2&&!source?.length)continue;
         if(group===3&&A.meta.downstream_time_basis!=='bag_record')continue;
         const rows=source?source.filter(r=>r[0]>=p.start&&r[0]<p.end):p.velocity.map(r=>[r[0],...r.slice(group?4:1,group?7:4),r[7],r[8],r[9],r[10]]);
         if(group>=2&&!rows.length)continue;
-        const vr=reduce(rows,[1,2,3],4,6),key=['command','feedback','tracking_raw','downstream'][group];
+        const vr=reduce(rows,[1,2,3],4,6),key=presentation.key;
         for(let axis=0;axis<3;axis++)velocity.push({
           ...arrays(vr,r=>r[0],r=>r[1+axis],r=>r[4],r=>r[6],r=>time(r[0])+(group===3?'<br>'+A.config.topics.downstream+' · bag record 时间':'')),
-          mode:'lines',name:['指令 · '+A.config.topics.command,'反馈','原始指令','平滑输出 · '+A.config.topics.downstream+'<br>（record 时间）'][group],
+          mode:'lines',name:presentation.label+(group===0?' · '+A.config.topics.command:group===3?' · '+A.config.topics.downstream+'<br>（record 时间）':''),
           legendgroup:key,visible:velocityControls[key].checked?true:'legendonly',showlegend:p===selected[0]&&axis===0,
           xaxis:axis?'x'+(axis+1):'x',yaxis:axis?'y'+(axis+1):'y',
-          line:{color:['#2473d6','#009E73','#000000','#FFD700'][group],width:1.5,dash:group===1?'dash':'solid',shape:group===1?'linear':'hv'}});
+          line:{color:presentation.color,width:1.5,dash:presentation.dash,shape:group===1?'linear':'hv'}});
       }
       const tr=reduce(p.tracking,[6,7,9],10,13);
       for(let axis=0;axis<3;axis++) {
         const col=[6,7,9][axis];
         errors.push({...arrays(tr,r=>r[0],r=>r[col],r=>r[10]&&r[col]!==null,r=>r[13]),
           mode:'lines',name:['横向','路径距离','姿态'][axis],showlegend:false,
-          xaxis:axis?'x'+(axis+1):'x',yaxis:axis?'y'+(axis+1):'y',line:{color:['#2473d6','#1b9c8e','#9968bd'][axis],width:1.5}});
+          xaxis:axis?'x'+(axis+1):'x',yaxis:axis?'y'+(axis+1):'y',line:{color:style.errors.colors[axis],width:1.5}});
       }
     }
     for(const [key,input] of Object.entries(velocityControls))input.disabled=!velocity.some(trace=>trace.legendgroup===key);
-    const el=layout(['横向 (m)','路径距离 (m)','姿态 (rad)']);
-    if(!selected.some(p=>p.tracking.some(r=>r[9]!==null)))el.annotations=[{xref:'paper',yref:'paper',x:.5,y:.12,text:'无已验证的 target_yaw，姿态误差不可用',showarrow:false,font:{size:12,color:'#8b7894'}}];
+    const el=layout(style.errors.labels);
+    if(!selected.some(p=>p.tracking.some(r=>r[9]!==null)))el.annotations=[{xref:'paper',yref:'paper',x:.5,y:.12,text:style.errors.unavailable_yaw,showarrow:false,font:{size:12,color:'#8b7894'}}];
     await Promise.all([Plotly.react($('velocity'),velocity,{...layout(['vx (m/s)','vy (m/s)','ω (rad/s)']),
         legend:{...common.legend,y:1.02,yanchor:'bottom'}},config),
       Plotly.react($('errors'),errors,el,config)]);
@@ -231,9 +234,9 @@
     const valid=r&&r[10];let x=[],y=[],dx=[],dy=[];
     if(valid){x=[r[1],r[4]];y=[r[2],r[5]];
       if($('showDirections').checked){const span=graph._fullLayout.xaxis.range;
-        const length=(span[1]-span[0])*.035;dx=[r[1],r[1]+Math.cos(r[3])*length];dy=[r[2],r[2]+Math.sin(r[3])*length];}}
+        const length=(span[1]-span[0])*trajectoryStyle.direction_ratio;dx=[r[1],r[1]+Math.cos(r[3])*length];dy=[r[2],r[2]+Math.sin(r[3])*length];}}
     const xs=[x,dx],ys=[y,dy],indices=[last-2,last-1];
-    const span=graph._fullLayout.xaxis.range,endpointLength=(span[1]-span[0])*.07;
+    const span=graph._fullLayout.xaxis.range,endpointLength=(span[1]-span[0])*trajectoryStyle.endpoint_direction_ratio;
     graph.data.forEach((trace,index)=>{
       const pose=trace.meta?.endpoint_pose;if(!pose)return;
       xs.push([pose[0],pose[0]+Math.cos(pose[2])*endpointLength]);
@@ -323,6 +326,7 @@
       if(!paths.length)$('taskInfo').textContent+=' · 无可评价路径 · '+reason+'；相关证据见事件与日志';
     }
     $('association').textContent=paths.length===1?badgeText(paths[0]):paths.length?'路径版本分别评价':'无可评价路径';
+    $('association').hidden=!$('association').textContent;
     $('stage').replaceChildren(new Option('全部阶段',''));
     if(paths.length===1)for(const stage of Object.keys(paths[0].stages))$('stage').add(new Option(stage,stage));
     $('aggregateQuality').hidden=!navigation||!paths.length;

@@ -298,6 +298,76 @@ async def main():
                     await asyncio.sleep(.3)
                     assert await evaluate("trackInsight.selected")==task['paths'][0]
                     assert await evaluate("document.querySelector('#navigation button.selected').closest('details').open")
+        # Review records are portable, recoverable and isolated to one test round.
+        saved_storage=await evaluate("Object.fromEntries(Object.entries(localStorage).filter(([key])=>key.startsWith('trackInsight:')))")
+        async def reload_records():
+            await evaluate('window.reviewReloadPending=true')
+            await call('Page.reload',{'ignoreCache':True})
+            for _ in range(100):
+                await asyncio.sleep(.1)
+                if await evaluate("!window.reviewReloadPending&&Boolean(window.trackInsight)&&Boolean(document.getElementById('reviewRecordsDialog'))"):return
+            raise AssertionError('Review records did not initialize')
+        async def import_record(record):
+            text=record if isinstance(record,str) else json.dumps(record)
+            await evaluate("(()=>{const input=document.getElementById('reviewRecordsFile'),data=new DataTransfer();data.items.add(new File(["+json.dumps(text)+"],'records.json',{type:'application/json'}));input.files=data.files;input.dispatchEvent(new Event('change'));})()")
+            await asyncio.sleep(.3)
+            return await evaluate("document.getElementById('reviewRecordsStatus').textContent")
+        try:
+            await evaluate("(()=>{const m=trackInsight.analysis.meta,i=JSON.stringify([m.input_sha256,m.start_ns,m.end_ns]);localStorage.setItem('trackInsight:favorites:v1:'+i,JSON.stringify(['E1']));localStorage.setItem('trackInsight:hidden:v1:'+i,JSON.stringify(['E2']));})()")
+            await reload_records()
+            assert await evaluate("document.getElementById('toggleFavorite').getAttribute('aria-pressed')")=='true','Old favorite was lost'
+            assert not await evaluate("[...document.getElementById('quickSelection').options].some(o=>o.value==='E2')"),'Old hidden item was lost'
+            await evaluate("document.getElementById('manageReviewRecords').click()")
+            assert await evaluate("document.getElementById('reviewRecordsDialog').matches(':modal')")
+            assert await evaluate("document.querySelector('#hiddenReviewRecords [data-key=E2]')!==null")
+            download_dir=Path(args.screenshot).resolve().parent/'review_record_downloads'
+            download_dir.mkdir(exist_ok=True)
+            await call('Browser.setDownloadBehavior',{'behavior':'allow','downloadPath':str(download_dir)})
+            previous_downloads={p:p.stat().st_mtime_ns for p in download_dir.glob('Track_Insight_review_*.json')}
+            await evaluate("document.getElementById('exportReviewRecords').click()")
+            for _ in range(50):
+                downloads=[p for p in download_dir.glob('Track_Insight_review_*.json') if p.stat().st_mtime_ns!=previous_downloads.get(p)]
+                if downloads:break
+                await asyncio.sleep(.1)
+            assert downloads,'No review record download'
+            record=json.loads(max(downloads,key=lambda p:p.stat().st_mtime_ns).read_text())
+            assert record['favorites']==['E1'] and record['hidden']==['E2'],record
+            await evaluate("document.querySelector('#hiddenReviewRecords [data-key=E2] button').click()")
+            assert await evaluate("[...document.getElementById('quickSelection').options].some(o=>o.value==='E2')")
+            before_metrics=await evaluate("JSON.stringify(trackInsight.analysis.overview)")
+            record['favorites'].append('E2')
+            assert '导入完成' in await import_record(record)
+            assert not await evaluate("[...document.getElementById('quickSelection').options].some(o=>o.value==='E2')")
+            snapshot="Object.fromEntries(Object.entries(localStorage).filter(([key])=>key.startsWith('trackInsight:')))"
+            unchanged=await evaluate(snapshot)
+            for bad in [dict(record,source={}),dict(record,schema_version=999),dict(record,hidden=['unknown']),dict(record,favorites='E1'),'not json']:
+                assert '导入失败' in await import_record(bad)
+                assert await evaluate(snapshot)==unchanged,'Invalid import mutated saved records'
+            all_keys=await evaluate("[...document.querySelectorAll('#navigation button')].map(b=>b.dataset.key)")
+            record['hidden']=all_keys
+            assert '导入完成' in await import_record(record)
+            assert await evaluate("document.getElementById('quickSelection').options.length")==0
+            await evaluate("document.getElementById('restoreAllHidden').click()")
+            assert await evaluate("document.getElementById('quickSelection').options.length")>0
+            assert await evaluate("document.getElementById('restoreAllHidden').disabled")
+            assert await evaluate("[...document.getElementById('favoriteSelection').options].map(o=>o.value).includes('E2')")
+            assert await evaluate("JSON.stringify(trackInsight.analysis.overview)")==before_metrics
+            await reload_records()
+            assert await evaluate("[...document.getElementById('quickSelection').options].some(o=>o.value==='E2')")
+            assert await evaluate("[...document.getElementById('favoriteSelection').options].map(o=>o.value).includes('E2')")
+            # Storage refusal does not break the session or export/recovery controls.
+            favorite_before=await evaluate("document.getElementById('toggleFavorite').getAttribute('aria-pressed')")
+            await evaluate("window.reviewOriginalSetItem=Storage.prototype.setItem;Storage.prototype.setItem=function(){throw new DOMException('blocked','SecurityError')}")
+            try:
+                await evaluate("document.getElementById('toggleFavorite').click();document.getElementById('manageReviewRecords').click()")
+                assert '无法保存' in await evaluate("document.getElementById('reviewRecordsStatus').textContent")
+                assert await evaluate("document.getElementById('toggleFavorite').getAttribute('aria-pressed')")!=favorite_before
+                assert not await evaluate("document.getElementById('exportReviewRecords').disabled")
+            finally:
+                await evaluate('Storage.prototype.setItem=window.reviewOriginalSetItem;delete window.reviewOriginalSetItem')
+        finally:
+            await evaluate("(()=>{for(const k of Object.keys(localStorage))if(k.startsWith('trackInsight:'))localStorage.removeItem(k);for(const [k,v] of Object.entries("+json.dumps(saved_storage)+"))localStorage.setItem(k,v);})()")
+            await reload_records()
         initial=await evaluate("({title:document.title,paths:trackInsight.analysis.plans.length,time:trackInsight.time(10),traces:document.getElementById('velocity').data.length})")
         await call("Emulation.setTimezoneOverride",{"timezoneId":"America/Los_Angeles"})
         assert await evaluate("trackInsight.time(10)")==initial["time"],"Viewer timezone changed labels"
@@ -373,6 +443,6 @@ async def main():
         assert not external,external
         assert not errors,errors
         print(json.dumps({"status":"passed","initial":initial,"offline":True,"timezone_independent":True,
-                          "playback":True,"report_overview":True,"favorites_add_remove_reload_navigate":True,"report_outcome_filter":True,"comprehensive_delete_persist_report_preserved":True,"step_50ms_both_modes":True,"step_pauses_and_clamps":True,"range_link":True,"review_mode":True,"shared_cursor":True,
+                          "playback":True,"report_overview":True,"favorites_add_remove_reload_navigate":True,"review_records_restore_import_export":True,"report_outcome_filter":True,"comprehensive_delete_persist_report_preserved":True,"step_50ms_both_modes":True,"step_pauses_and_clamps":True,"range_link":True,"review_mode":True,"shared_cursor":True,
                           "navigation_cases":sorted(tested),"state_preserved":True,"viewports":["1366x768","1920x1080"],"errors":len(errors)},ensure_ascii=False))
 asyncio.run(main())

@@ -121,8 +121,8 @@ TEST(Pipeline, TrackingRawVelocityPreservesTimeGapsAndExistingMetrics) {
     if(stamped) {
       const auto output=f.root/"raw_report";ASSERT_EQ(renderReport(analysis,output,TRACK_INSIGHT_RESOURCES),0);
       const auto svg=readText(output/"figures/P1_velocity.svg");
-      EXPECT_NE(svg.find("Black: tracking raw command"),std::string::npos);
-      EXPECT_NE(svg.find("stroke=\"#000000\""),std::string::npos);
+      EXPECT_EQ(svg.find("原始指令"),std::string::npos);
+      EXPECT_EQ(svg.find("stroke=\"#000000\""),std::string::npos);
     }
   }
 }
@@ -218,4 +218,26 @@ TEST(Pipeline, CorruptPathKeepsPublicationIdentityAsUnavailable) {
   const auto read=readBag(path,{},Config{});ASSERT_EQ(read.plans.size(),1U);
   EXPECT_EQ(read.plans[0].id,"P1");EXPECT_FALSE(read.plans[0].valid);EXPECT_EQ(read.plans[0].reason,"path_decode_error");
   EXPECT_TRUE(evaluate(read,Config{}).paths.empty());
+}
+
+TEST(Report, StaticFiguresMatchViewerPresentation) {
+  Fixture f(true,true,true);Config c;const auto data=readBag(f.bag,f.log,c);
+  const auto a=makeAnalysis(data,evaluate(data,c),c,captureDisplayClock(data.start,data.end,true));
+  const auto output=f.root/"visual_report";ASSERT_EQ(renderReport(a,output,TRACK_INSIGHT_RESOURCES),0);
+  const auto trajectory=readText(output/"figures/P1_trajectory.svg");
+  EXPECT_NE(trajectory.find("规划路径与实际轨迹"),std::string::npos);
+  EXPECT_NE(trajectory.find("stroke=\"#2473d6\""),std::string::npos);
+  EXPECT_NE(trajectory.find("stroke=\"#c7a11a\""),std::string::npos);
+  EXPECT_NE(trajectory.find("<polygon"),std::string::npos);
+  EXPECT_NE(trajectory.find("fill=\"#0b9f80\""),std::string::npos);
+  EXPECT_NE(trajectory.find("fill=\"#df843d\""),std::string::npos);
+  EXPECT_EQ(trajectory.find("Actual last sample"),std::string::npos);
+  EXPECT_EQ(trajectory.find("Yellow: published path"),std::string::npos);
+  const auto velocity=readText(output/"figures/P1_velocity.svg");
+  EXPECT_NE(velocity.find("stroke=\"#009E73\""),std::string::npos);
+  EXPECT_NE(velocity.find("stroke-dasharray=\"6 4\""),std::string::npos);
+  EXPECT_NE(velocity.find("stroke=\"#FFD700\""),std::string::npos);
+  EXPECT_EQ(velocity.find("stroke=\"#000000\""),std::string::npos);
+  EXPECT_NE(readText(output/"figures/P1_errors.svg").find("stroke=\"#1b9c8e\""),std::string::npos);
+  EXPECT_EQ(Json::parse(readText(output/"analysis.json"))["paths"],a["paths"]);
 }

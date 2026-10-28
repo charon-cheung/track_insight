@@ -2,50 +2,6 @@
 'use strict';
 (() => {
   const $=id=>document.getElementById(id),graphs=['trajectory','velocity','errors'];
-  function initFavorites(api) {
-    const buttons=[...$('navigation').querySelectorAll('button')];
-    const entries=new Map(buttons.map(button=>[button.dataset.key,button]));
-    const star=$('toggleFavorite'),picker=$('favoriteSelection');
-    const meta=api.analysis.meta;
-    const storageKey='trackInsight:favorites:v1:'+JSON.stringify([meta.input_sha256,meta.start_ns,meta.end_ns]);
-    let favorites=new Set(),storageUnavailable=false,lastSelected;
-    try {
-      const saved=JSON.parse(localStorage.getItem(storageKey)||'[]');
-      if(Array.isArray(saved))favorites=new Set(saved.filter(key=>typeof key==='string'&&entries.has(key)));
-    } catch(error) {storageUnavailable=error.name!=='SyntaxError';}
-    function syncFavorite() {
-      lastSelected=api.selected;
-      const active=favorites.has(api.selected),label=active?'取消星标':'加入星标';
-      star.disabled=!entries.has(api.selected)||entries.get(api.selected).hidden;
-      star.classList.toggle('starred',active);star.setAttribute('aria-pressed',String(active));
-      star.setAttribute('aria-label',label);
-      star.title=label+(storageUnavailable?'（无法保存到浏览器，星标仅本次有效）':'');
-      picker.value=active?api.selected:'';
-    }
-    function renderFavorites() {
-      picker.replaceChildren(new Option('选择星标',''));
-      for(const [key,button] of entries)if(favorites.has(key)&&!button.hidden)picker.add(new Option(button.dataset.review,key));
-      $('favoritePicker').hidden=picker.options.length===1;
-      syncFavorite();
-    }
-    star.onclick=()=>{
-      if(!entries.has(api.selected)||entries.get(api.selected).hidden)return;
-      if(favorites.has(api.selected))favorites.delete(api.selected);else favorites.add(api.selected);
-      try {localStorage.setItem(storageKey,JSON.stringify([...favorites]));storageUnavailable=false;}
-      catch {storageUnavailable=true;}
-      renderFavorites();
-    };
-    picker.onchange=()=>{
-      if(!favorites.has(picker.value)||entries.get(picker.value)?.hidden)return;
-      $('quickSelection').value=picker.value;
-      $('quickSelection').dispatchEvent(new Event('change'));
-    };
-    document.addEventListener('trackinsight:cursor',()=>{
-      if(lastSelected!==api.selected)syncFavorite();
-    });
-    renderFavorites();
-    return renderFavorites;
-  }
   document.addEventListener('trackinsight:ready',()=>{
     const api=window.trackInsight,body=document.body,dock=$('playbackDock');
     let reportScroll=0,resizeFrame=0;
@@ -58,14 +14,6 @@
       button.dataset.reportExcluded=String(['replaced','failed'].includes(task?.outcome));
       selection.add(new Option(button.dataset.report,button.dataset.key));
     }
-    const meta=api.analysis.meta;
-    const hiddenStorageKey='trackInsight:hidden:v1:'+JSON.stringify([meta.input_sha256,meta.start_ns,meta.end_ns]);
-    let removedSelections=new Set();
-    try {
-      const saved=JSON.parse(localStorage.getItem(hiddenStorageKey)||'[]');
-      const keys=new Set([...selection.options].map(option=>option.value));
-      if(Array.isArray(saved))removedSelections=new Set(saved.filter(key=>typeof key==='string'&&keys.has(key)));
-    } catch { /* Keep the report usable when browser storage is unavailable. */ }
     function updateSelectionButtons() {
       $('deleteSelection').disabled=selection.selectedIndex<0;
       $('previousSelection').disabled=selection.selectedIndex<=0;
@@ -85,10 +33,7 @@
     };
     $('deleteSelection').onclick=()=>{
       if(!body.classList.contains('review-mode')||selection.selectedIndex<0)return;
-      const index=selection.selectedIndex;removedSelections.add(api.selected);
-      try {localStorage.setItem(hiddenStorageKey,JSON.stringify([...removedSelections]));}
-      catch {$('deleteSelection').title='浏览器无法保存隐藏记录，本次刷新后可能恢复';}
-      updateNavigation(true,index);
+      records.hide(api.selected);
     };
     const fields=[['position',['x (m)','y (m)','朝向 (rad)']],
       ['command',['vx (m/s)','vy (m/s)','ω (rad/s)']],['errors',['横向 (m)','路径距离 (m)','姿态 (rad)']]];
@@ -165,7 +110,7 @@
       selection.replaceChildren();
       for(const button of $('navigation').querySelectorAll('button')) {
         button.firstChild.textContent=button.dataset[labelMode];
-        button.hidden=button.dataset.reportExcluded==='true'||(review&&removedSelections.has(button.dataset.key));
+        button.hidden=button.dataset.reportExcluded==='true'||(review&&records.hidden.has(button.dataset.key));
         if(!button.hidden)selection.add(new Option(button.dataset[labelMode],button.dataset.key));
       }
       for(const group of $('navigation').querySelectorAll('details.navigationTask')) {
@@ -177,7 +122,7 @@
         if(selection.options.length){selection.selectedIndex=Math.min(fallbackIndex,selection.options.length-1);selection.dispatchEvent(new Event('change'));}
         else api.select([],'empty');
       }
-      updateSelectionButtons();refreshFavorites();
+      updateSelectionButtons();records.refresh();
     }
     function setMode(review) {
       if(review===body.classList.contains('review-mode'))return;
@@ -195,7 +140,8 @@
     }
     $('reportMode').onclick=()=>setMode(false);$('reviewMode').onclick=()=>setMode(true);
     new ResizeObserver(scheduleResize).observe($('chartDeck'));
-    const refreshFavorites=initFavorites(api);
+    const records=window.createReviewRecords(api,()=>updateNavigation(body.classList.contains('review-mode'),Math.max(0,selection.selectedIndex)));
+    records.refresh();
     setMode(true);
   },{once:true});
 })();

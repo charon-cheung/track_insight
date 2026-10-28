@@ -28,8 +28,19 @@ struct Canvas {
   void line(double x1,double y1,double x2,double y2,const std::string& color="#dfe6f0",double width=1) {
     out<<"<path d=\"M "<<x1<<' '<<y1<<" L "<<x2<<' '<<y2<<"\" stroke=\""<<color<<"\" stroke-width=\""<<width<<"\" fill=\"none\"/>";
   }
-  void dot(double x,double y,const std::string& color,int r=5) {
+  void dot(double x,double y,const std::string& color,double r=5) {
     out<<"<circle cx=\""<<x<<"\" cy=\""<<y<<"\" r=\""<<r<<"\" fill=\""<<color<<"\" stroke=\"white\" stroke-width=\"2\"/>";
+  }
+  void marker(double x,double y,const std::string& color,const std::string& symbol,double size) {
+    if(symbol=="circle"){dot(x,y,color,size/2);return;}
+    if(symbol!="star")throw std::runtime_error("unsupported endpoint marker");
+    out<<"<polygon points=\"";
+    for(int i=0;i<10;++i) {
+      const double angle=-std::acos(-1)/2+i*std::acos(-1)/5;
+      const double radius=size/2*(i%2?.45:1);
+      out<<x+radius*std::cos(angle)<<','<<y+radius*std::sin(angle)<<' ';
+    }
+    out<<"\" fill=\""<<color<<"\"/>";
   }
   std::string finish(const std::string& note) {
     text(55,1000,note,13);text(55,1025,"Recorded localization estimate | Duration-weighted cells | No time-shift correction",12);
@@ -65,9 +76,10 @@ void polyline(Canvas& c,const Json& rows,const Axis& a,const std::string& color,
   if(!dash.empty())c.out<<" stroke-dasharray=\""<<dash<<"\"";
   c.out<<" fill=\"none\"/>";
 }
-std::string trajectory(const Json& a,const Json& p,const Json& plan,const DisplayClock& clock) {
+std::string trajectory(const Json& a,const Json& p,const Json& plan,const Json& style,const DisplayClock& clock) {
   const auto& rows=p.at("tracking");const auto& points=plan.at("poses");
-  Canvas c("Track Insight | "+plan.at("id").get<std::string>()+" | Planned and recorded trajectory",
+  const auto& look=style.at("trajectory");
+  Canvas c("Track Insight | "+plan.at("id").get<std::string>()+" | "+look.at("title").get<std::string>(),
     p.at("start_label").get<std::string>()+"  —  "+p.at("end_label").get<std::string>()+" | "+a["meta"]["frame"].get<std::string>());
   double xmin=1e100,xmax=-1e100,ymin=1e100,ymax=-1e100;
   auto bounds=[&](double x,double y){xmin=std::min(xmin,x);xmax=std::max(xmax,x);ymin=std::min(ymin,y);ymax=std::max(ymax,y);};
@@ -77,7 +89,7 @@ std::string trajectory(const Json& a,const Json& p,const Json& plan,const Displa
   const double scale=std::max({(xmax-xmin)/1180,(ymax-ymin)/690,0.001})*1.16;
   const double cx=(xmin+xmax)/2,cy=(ymin+ymax)/2;
   Axis ax{130,175,1180,690,cx-590*scale,cx+590*scale,cy-345*scale,cy+345*scale};axes(c,ax);
-  polyline(c,points,ax,"#d3a915",[](const Json&){return true;},[](const Json& r){return r[0].get<double>();},[](const Json& r){return r[1].get<double>();});
+  polyline(c,points,ax,look.at("planned").at("color").get<std::string>(),[](const Json&){return true;},[](const Json& r){return r[0].get<double>();},[](const Json& r){return r[1].get<double>();});
   // Break actual trajectory at invalid cells or temporal discontinuities.
   std::ostringstream path;bool connected=false;double end=0;
   const Json* first=nullptr;const Json* last=nullptr;
@@ -88,20 +100,13 @@ std::string trajectory(const Json& a,const Json& p,const Json& plan,const Displa
     if(!first)first=&r;
     last=&r;
   }
-  c.out<<"<path d=\""<<path.str()<<"\" stroke=\"#2274e0\" stroke-width=\"2.5\" fill=\"none\"/>";
-  if(!points.empty()) {
-    for(const auto* point:{&points.front(),&points.back()}) {
-      c.out<<"<circle cx=\""<<ax.px((*point)[0])<<"\" cy=\""<<ax.py((*point)[1])
-        <<"\" r=\"9\" fill=\"none\" stroke=\"#c7a11a\" stroke-width=\"2\"/>";
-    }
-  }
+  c.out<<"<path d=\""<<path.str()<<"\" stroke=\""<<look.at("actual").at("color").get<std::string>()<<"\" stroke-width=\"2.5\" fill=\"none\"/>";
   const std::size_t stride=std::max<std::size_t>(1,rows.size()/7);
   for(std::size_t i=0;i<rows.size();i+=stride)if(rows[i][10].get<bool>()) {
     const auto& r=rows[i];const double angle=r[3],x=ax.px(r[1]),y=ax.py(r[2]);
-    const double tx=x+13*std::cos(angle),ty=y-13*std::sin(angle);
-    c.line(x,y,tx,ty,"#184581",2);
-    c.line(tx,ty,tx-5*std::cos(angle-.5),ty+5*std::sin(angle-.5),"#184581",2);
-    c.line(tx,ty,tx-5*std::cos(angle+.5),ty+5*std::sin(angle+.5),"#184581",2);
+    const double length=ax.w*look.at("direction_ratio").get<double>();
+    const double tx=x+length*std::cos(angle),ty=y-length*std::sin(angle);
+    c.line(x,y,tx,ty,look.at("direction").get<std::string>(),4);
   }
   const auto& max_metric=p["metrics"]["path_distance"];
   if(!max_metric["max"].is_null())for(const auto& r:rows)if(r[12]==max_metric["max_ns"]) {
@@ -109,40 +114,48 @@ std::string trajectory(const Json& a,const Json& p,const Json& plan,const Displa
     c.text(130,957,"Max distance: "+num(max_metric["max"],3)+" m at "+
       formatTimestamp(std::stoll(max_metric["max_ns"].get<std::string>()),clock,false),14,"#ad4351");break;
   }
-  if(first) {
-    const double x=ax.px((*first)[1]),y=ax.py((*first)[2]),angle=(*first)[3];
-    c.line(x,y,x+26*std::cos(angle),y-26*std::sin(angle),"#11a682",2);
-    c.dot(ax.px((*first)[1]),ax.py((*first)[2]),"#11a682",7);
-    c.text(130,925,"Actual start: "+formatTimestamp(std::stoll((*first)[12].get<std::string>()),clock),14);
+  for(const auto& endpoint:std::vector<std::pair<const Json*,std::string>>{{first,"start"},{last,"end"}}) {
+    if(!endpoint.first)continue;
+    const auto& row=*endpoint.first;const auto& marker=look.at(endpoint.second);
+    const auto color=marker.at("color").get<std::string>(),label=marker.at("label").get<std::string>();
+    const double x=ax.px(row[1]),y=ax.py(row[2]),angle=row[3];
+    const double length=ax.w*look.at("endpoint_direction_ratio").get<double>();
+    c.line(x,y,x+length*std::cos(angle),y-length*std::sin(angle),color,4);
+    c.marker(x,y,color,marker.at("symbol"),look.at("marker_size"));
+    c.text(x-16,y-17,label,15);
+    c.text(endpoint.second=="start"?130:750,925,label+": "+
+      formatTimestamp(std::stoll(row[12].get<std::string>()),clock),14);
   }
-  if(last) {
-    const double x=ax.px((*last)[1]),y=ax.py((*last)[2]),angle=(*last)[3];
-    c.line(x,y,x+26*std::cos(angle),y-26*std::sin(angle),"#e47a2c",2);
-    c.dot(ax.px((*last)[1]),ax.py((*last)[2]),"#e47a2c",7);
-    c.text(750,925,"Actual last sample: "+formatTimestamp(std::stoll((*last)[12].get<std::string>()),clock),14);
-  }
-  c.text(180,135,"Yellow: published path (complete snapshot)",15,"#9c7b00");
-  c.text(750,135,"Blue: recorded localization",15,"#2274e0");
+  c.text(180,135,plan.at("id").get<std::string>()+" "+look.at("planned").at("label").get<std::string>(),15,look.at("planned").at("color"));
+  c.text(750,135,plan.at("id").get<std::string>()+" "+look.at("actual").at("label").get<std::string>(),15,look.at("actual").at("color"));
   c.text(600,908,a["meta"]["frame"].get<std::string>()+" x / y (m), equal scale",14);
   return c.finish("Association: "+p["interval"]["identity"].get<std::string>()+
     " | Start: "+p["interval"]["start_quality"].get<std::string>()+" | End: "+p["interval"]["end_quality"].get<std::string>());
 }
-std::string series(const Json& a,const Json& p,const DisplayClock& clock,bool error) {
-  Canvas c("Track Insight | "+p["interval"]["plan_id"].get<std::string>()+(error?" | Tracking errors":" | Command and feedback"),
+std::string series(const Json& a,const Json& p,const Json& style,const DisplayClock& clock,bool error) {
+  const auto& velocity_style=style.at("velocity").at("series");
+  Canvas c("Track Insight | "+p["interval"]["plan_id"].get<std::string>()+" | "+style.at(error?"errors":"velocity").at("title").get<std::string>(),
     p["start_label"].get<std::string>()+"  —  "+p["end_label"].get<std::string>());
   const auto& rows=p.at(error?"tracking":"velocity");
   Json commands=Json::array(),feedback=Json::array(),tracking_raw=Json::array(),downstream=Json::array();
   if(!error&&a.contains("signals"))for(const auto& key:{"commands","feedback","tracking_raw","downstream"}) {
     if(!a["signals"].contains(key))continue;
+    const auto look=std::find_if(velocity_style.begin(),velocity_style.end(),[&](const Json& v){return v.at("signal")==key;});
+    if(look==velocity_style.end()||!look->at("default_visible").get<bool>())continue;
     if(std::string(key)=="downstream"&&a["meta"].value("downstream_time_basis","")!="bag_record")continue;
     auto& target=std::string(key)=="commands"?commands:std::string(key)=="feedback"?feedback:std::string(key)=="tracking_raw"?tracking_raw:downstream;
     for(const auto& row:a["signals"][key])if(row[0]>=p["start"]&&row[0]<p["end"])target.push_back(row);
   }
-  const std::vector<std::string> names=error?std::vector<std::string>{"Signed lateral (m)","Distance to segment (m)","Target yaw error (rad)"}:
+  const std::vector<std::string> names=error?style.at("errors").at("labels").get<std::vector<std::string>>():
     std::vector<std::string>{"vx (m/s)","vy (m/s)","omega (rad/s)"};
-  if(!error){c.text(155,123,"Blue: command "+a["config"]["topics"]["command"].get<std::string>(),14,"#2274e0");c.text(600,123,"Green: odometry feedback",14,"#009E73");}
-  if(!error&&!tracking_raw.empty())c.text(1000,123,"Black: tracking raw command",14,"#000000");
-  if(!error&&!downstream.empty())c.text(155,145,"Yellow: "+a["config"]["topics"]["downstream"].get<std::string>()+" (bag record time)",14,"#FFD700");
+  const std::vector<const Json*> signals{&commands,&feedback,&tracking_raw,&downstream};
+  if(!error)for(std::size_t i=0;i<signals.size();++i) {
+    if(signals[i]->empty())continue;
+    const auto& look=velocity_style.at(i);auto label=look.at("label").get<std::string>();
+    if(i==0)label+=" · "+a["config"]["topics"]["command"].get<std::string>();
+    if(i==3)label+=" · "+a["config"]["topics"]["downstream"].get<std::string>()+" (bag record time)";
+    c.text(i==1?600:i==2?1000:155,i==3?145:123,label,14,look.at("color"));
+  }
   for(int panel=0;panel<3;++panel) {
     double lo=0,hi=0;std::size_t count=0;const int index=error?(panel==0?6:panel==1?7:9):panel+1;
     auto valid=[&](const Json& r){return r[error?10:7].get<bool>()&&!r[index].is_null();};
@@ -157,15 +170,16 @@ std::string series(const Json& a,const Json& p,const DisplayClock& clock,bool er
     c.text(140,ax.y-18,names[panel],16);axes(c,ax,&clock);
     if(count) {
       auto x=[](const Json& r){return r[0].get<double>();};
-      if(error)polyline(c,rows,ax,"#2274e0",valid,x,[&](const Json& r){return r[index].get<double>();},true);
+      if(error)polyline(c,rows,ax,style.at("errors").at("colors").at(panel),valid,x,[&](const Json& r){return r[index].get<double>();},true);
       else {
         auto ok=[](const Json& r){return r[4].get<bool>();};
-        polyline(c,commands,ax,"#2274e0",ok,x,[&](const Json& r){return r[index].get<double>();},true,true);
-        polyline(c,feedback,ax,"#009E73",ok,x,[&](const Json& r){return r[index].get<double>();},true,false,"6 4");
-        if(!tracking_raw.empty())polyline(c,tracking_raw,ax,"#000000",ok,x,[&](const Json& r){return r[index].get<double>();},true,true);
-        if(!downstream.empty())polyline(c,downstream,ax,"#FFD700",ok,x,[&](const Json& r){return r[index].get<double>();},true,true);
+        for(std::size_t i=0;i<signals.size();++i)if(!signals[i]->empty()) {
+          const auto& look=velocity_style.at(i);
+          polyline(c,*signals[i],ax,look.at("color"),ok,x,[&](const Json& r){return r[index].get<double>();},
+            true,i!=1,look.at("dash")=="dash"?"6 4":"");
+        }
       }
-    }else c.text(400,ax.y+95,error&&panel==2?"Unavailable: no verified target-yaw evidence":"Unavailable: no valid aligned data",18);
+    }else c.text(400,ax.y+95,error&&panel==2?style.at("errors").at("unavailable_yaw").get<std::string>():"无可用数据",18);
   }
   return c.finish("Time: "+std::string(clock.wall_clock?"generation-system local time":"relative ROS time")+" | Gaps are not connected");
 }
@@ -176,7 +190,7 @@ bool png(const std::filesystem::path& input,const std::filesystem::path& output)
   return WIFEXITED(status)&&WEXITSTATUS(status)==0&&std::filesystem::exists(output)&&std::filesystem::file_size(output)>0;
 }
 }
-std::vector<std::string> writeFigures(const Json& a,const std::filesystem::path& output,std::vector<std::string>& failures,
+std::vector<std::string> writeFigures(const Json& a,const Json& style,const std::filesystem::path& output,std::vector<std::string>& failures,
                                       const std::function<void(double)>& progress) {
   std::filesystem::create_directories(output/"figures");std::vector<std::string> files;
   const auto clock=readClock(a);std::size_t completed=0,total=a.at("paths").size()*3;
@@ -189,7 +203,7 @@ std::vector<std::string> writeFigures(const Json& a,const std::filesystem::path&
     if(!std::regex_match(plan_id,std::regex("P[1-9][0-9]*")))throw std::runtime_error("invalid plan identifier");
     for(const auto& kind:{"trajectory","velocity","errors"}) {
       const std::string stem="figures/"+plan_id+"_"+kind;
-      const std::string svg=std::string(kind)=="trajectory"?trajectory(a,p,*plan,clock):series(a,p,clock,std::string(kind)=="errors");
+      const std::string svg=std::string(kind)=="trajectory"?trajectory(a,p,*plan,style,clock):series(a,p,style,clock,std::string(kind)=="errors");
       writeText(output/(stem+".svg"),svg);files.push_back(stem+".svg");
       if(png(output/(stem+".svg"),output/(stem+".png")))files.push_back(stem+".png");
       else {std::filesystem::remove(output/(stem+".png"));failures.push_back(stem+".png: conversion failed");}

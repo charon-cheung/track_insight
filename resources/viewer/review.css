@@ -1,6 +1,9 @@
 /* The report and review modes reuse the same three plots and playback controls. */
 .viewToolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px}
 .viewNavigation,.modeSwitch{display:flex;align-items:center;gap:7px}.viewNavigation select{max-width:240px}
+#archiveHome{display:inline-flex;align-items:center;justify-content:center;min-height:33px;padding:7px 10px;background:white;border:1px solid #d5deeb;border-radius:4px;color:#445873;font-size:12px;white-space:nowrap;text-decoration:none}
+#archiveHome:hover{background:#edf4fe;border-color:#adc9ed}
+#archiveHome:focus-visible{outline:2px solid var(--blue)}
 .modeSwitch button{min-width:76px}.sidebar-collapsed .shell,.review-mode .shell{grid-template-columns:minmax(0,1fr)}
 .sidebar-collapsed #sidebar,.review-mode #sidebar,.review-mode #toggleSidebar{display:none}.plotOptions summary{display:none;cursor:pointer}
 .plotOptions{min-width:0}#playbackDock{background:#fff}.cursorLabels{display:flex;flex-direction:column;gap:3px;text-align:right}
@@ -82,3 +85,12 @@ body.velocity-maximized{overflow:hidden}
 #velocityView .panelTitle{height:auto;min-height:54px;flex-shrink:0;flex-wrap:wrap;padding:12px 18px}
 #velocityView #velocity{flex:1;height:0;min-height:0;overflow:hidden}
 #velocityView .plotNote{display:none}
+
+#reviewRecordsDialog{width:min(600px,calc(100vw - 32px));max-height:85dvh;overflow:auto;border:1px solid var(--border);border-radius:9px;padding:20px;color:#23304a;background:white}
+#reviewRecordsDialog::backdrop{background:#23304a55}
+#reviewRecordsDialog h2{font-size:20px}#reviewRecordsDialog h3{font-size:15px;margin:18px 0 8px}
+#reviewRecordsDialog p{font-size:13px;line-height:1.7;color:var(--muted)}
+.recordsHeading,.recordsActions,.hiddenRecord{display:flex;align-items:center;gap:10px}
+.recordsHeading,.hiddenRecord{justify-content:space-between}.recordsActions{flex-wrap:wrap}
+.hiddenRecord{padding:8px 0;border-bottom:1px solid var(--border)}
+#reviewRecordsStatus{min-height:22px}#manageReviewRecords{white-space:nowrap}

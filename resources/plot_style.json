@@ -1,0 +1,84 @@
+{
+  "trajectory": {
+    "title": "规划路径与实际轨迹",
+    "planned": {
+      "label": "规划",
+      "color": "#2473d6"
+    },
+    "actual": {
+      "label": "实际",
+      "color": "#c7a11a"
+    },
+    "start": {
+      "label": "起点",
+      "color": "#0b9f80",
+      "symbol": "star"
+    },
+    "end": {
+      "label": "终点",
+      "color": "#df843d",
+      "symbol": "circle"
+    },
+    "direction": "#184581",
+    "marker_size": 16.5,
+    "direction_ratio": 0.035,
+    "endpoint_direction_ratio": 0.07,
+    "plan_palette": [
+      "#2473d6",
+      "#937bc0",
+      "#8d9e57",
+      "#94a5b6"
+    ]
+  },
+  "velocity": {
+    "title": "指令与速度反馈",
+    "series": [
+      {
+        "key": "command",
+        "signal": "commands",
+        "label": "指令",
+        "color": "#2473d6",
+        "dash": "solid",
+        "default_visible": false
+      },
+      {
+        "key": "feedback",
+        "signal": "feedback",
+        "label": "反馈",
+        "color": "#009E73",
+        "dash": "dash",
+        "default_visible": true
+      },
+      {
+        "key": "tracking_raw",
+        "signal": "tracking_raw",
+        "label": "原始指令",
+        "color": "#000000",
+        "dash": "solid",
+        "default_visible": false
+      },
+      {
+        "key": "downstream",
+        "signal": "downstream",
+        "label": "平滑输出",
+        "color": "#FFD700",
+        "dash": "solid",
+        "default_visible": true
+      }
+    ]
+  },
+  "errors": {
+    "title": "跟踪误差",
+    "labels": [
+      "横向 (m)",
+      "路径距离 (m)",
+      "姿态 (rad)"
+    ],
+    "colors": [
+      "#2473d6",
+      "#1b9c8e",
+      "#9968bd"
+    ],
+    "unavailable_yaw": "无已验证的 target_yaw，姿态误差不可用"
+  }
+}
