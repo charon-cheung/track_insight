@@ -374,9 +374,9 @@ async def main():
         await evaluate("trackInsight.select([trackInsight.analysis.paths[Math.min(8,trackInsight.analysis.paths.length-1)]],'acceptance')")
         await evaluate("trackInsight.setCursor(trackInsight.analysis.paths[Math.min(8,trackInsight.analysis.paths.length-1)].start+1)")
         assert await evaluate("document.getElementById('trajectory').data.at(-2).x.length>0"),"Cursor position absent"
-        await evaluate("document.getElementById('multiPlans').click()")
         await asyncio.sleep(.3)
-        assert await evaluate("document.getElementById('trajectory').data.length")>=initial["paths"]
+        assert await evaluate("Array.from(document.querySelector('#trajectoryPanel .panelTitle').querySelectorAll('button,input,select,summary')).map(e=>e.id)")==['exportTrajectory']
+        assert await evaluate("document.getElementById('trajectory').data.some(t=>t.name.endsWith(' 规划')) && document.getElementById('trajectory').data.some(t=>t.name.endsWith(' 实际'))")
         await evaluate("document.getElementById('play').click()")
         before=await evaluate("trackInsight.cursor")
         await asyncio.sleep(.4)
@@ -387,7 +387,6 @@ async def main():
         await asyncio.sleep(.2)
         assert await evaluate("document.getElementById('errors').layout.xaxis.range")==[10,20],"Time range did not link"
         await evaluate("document.getElementById('resetTime').click()")
-        await evaluate("document.getElementById('multiPlans').click()")
         await asyncio.sleep(.3)
         # Mode changes must preserve selection, cursor and zoom, using one set of plots.
         await evaluate("trackInsight.select([trackInsight.analysis.paths[Math.min(8,trackInsight.analysis.paths.length-1)]],trackInsight.analysis.paths[Math.min(8,trackInsight.analysis.paths.length-1)].interval.id)")

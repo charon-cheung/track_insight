@@ -145,31 +145,29 @@
     return {x:xs,y:ys,text:hover,hovertemplate:'%{text}<br>%{y:.4f}<extra>%{fullData.name}</extra>',connectgaps:false};
   }
   async function trajectory() {
-    const traces=[],showAll=$('multiPlans').checked;
-    const plans=showAll?A.plans.filter(p=>p.valid):A.plans.filter(p=>selected.some(s=>s.interval.plan_id===p.id));
-    if($('showPlans').checked)for(const [index,p]of plans.entries())traces.push({x:p.poses.map(r=>r[0]),y:p.poses.map(r=>r[1]),
+    const traces=[];
+    const plans=A.plans.filter(p=>selected.some(s=>s.interval.plan_id===p.id));
+    for(const [index,p]of plans.entries())traces.push({x:p.poses.map(r=>r[0]),y:p.poses.map(r=>r[1]),
       mode:'lines',name:p.id+' '+trajectoryStyle.planned.label,line:{color:trajectoryStyle.plan_palette[index%trajectoryStyle.plan_palette.length],width:2},
       hovertemplate:p.id+'<br>x %{x:.3f} · y %{y:.3f}<extra></extra>'});
     for(const p of selected) {
       const rows=reduce(p.tracking,[1,2,6,7],10,13);
-      if($('showActual').checked)traces.push({...arrays(rows,r=>r[1],r=>r[2],r=>r[10],r=>r[13],r=>{
+      traces.push({...arrays(rows,r=>r[1],r=>r[2],r=>r[10],r=>r[13],r=>{
         const stamp=BigInt(r[12]),seconds=stamp/1000000000n,millis=stamp%1000000000n/1000000n;
         return time(r[0])+'<br>Timestamp: '+seconds+'.'+millis.toString().padStart(3,'0');
       }),mode:'lines',
         name:p.interval.plan_id+' '+trajectoryStyle.actual.label,line:{color:trajectoryStyle.actual.color,width:2},hovertemplate:'%{text}<br>x %{x:.3f} · y %{y:.3f}<extra></extra>'});
-      if($('showMarkers').checked) {
-        const valid=p.tracking.filter(r=>r[10]);
-        if(valid.length&&$('showDirections').checked)for(const [index,r]of [valid[0],valid.at(-1)].entries()) {
-          if(!Number.isFinite(r[3]))continue;
-          traces.push({x:[r[1]],y:[r[2]],mode:'lines',name:index?'终点朝向':'起点朝向',
-            meta:{endpoint_pose:r.slice(1,4)},line:{color:trajectoryStyle[index?'end':'start'].color,width:4},
-            showlegend:false,hoverinfo:'skip'});
-        }
-        if(valid.length)traces.push({x:[valid[0][1],valid.at(-1)[1]],y:[valid[0][2],valid.at(-1)[2]],
-          mode:'markers+text',name:p.interval.plan_id+' 起终点',showlegend:false,text:[trajectoryStyle.start.label,trajectoryStyle.end.label],textposition:'top center',
-          customdata:[time(valid[0][0]),time(valid.at(-1)[0])],hovertemplate:'%{customdata}<extra></extra>',
-          marker:{color:[trajectoryStyle.start.color,trajectoryStyle.end.color],size:trajectoryStyle.marker_size,symbol:[trajectoryStyle.start.symbol,trajectoryStyle.end.symbol]}});
+      const valid=p.tracking.filter(r=>r[10]);
+      if(valid.length)for(const [index,r]of [valid[0],valid.at(-1)].entries()) {
+        if(!Number.isFinite(r[3]))continue;
+        traces.push({x:[r[1]],y:[r[2]],mode:'lines',name:index?'终点朝向':'起点朝向',
+          meta:{endpoint_pose:r.slice(1,4)},line:{color:trajectoryStyle[index?'end':'start'].color,width:4},
+          showlegend:false,hoverinfo:'skip'});
       }
+      if(valid.length)traces.push({x:[valid[0][1],valid.at(-1)[1]],y:[valid[0][2],valid.at(-1)[2]],
+        mode:'markers+text',name:p.interval.plan_id+' 起终点',showlegend:false,text:[trajectoryStyle.start.label,trajectoryStyle.end.label],textposition:'top center',
+        customdata:[time(valid[0][0]),time(valid.at(-1)[0])],hovertemplate:'%{customdata}<extra></extra>',
+        marker:{color:[trajectoryStyle.start.color,trajectoryStyle.end.color],size:trajectoryStyle.marker_size,symbol:[trajectoryStyle.start.symbol,trajectoryStyle.end.symbol]}});
     }
     traces.push({x:[],y:[],mode:'lines+markers',name:'位置与投影',line:{color:'#e36260',dash:'dot'},
       marker:{size:10,color:['#facc15','#e36260']},showlegend:false,hoverinfo:'skip'});
@@ -177,7 +175,7 @@
     await Plotly.react($('trajectory'),traces,{...common,hovermode:'closest',margin:{l:65,r:35,t:30,b:48},
       xaxis:{title:A.meta.frame+' x (m)',gridcolor:'#e8edf5',zeroline:false},
       yaxis:{title:A.meta.frame+' y (m)',scaleanchor:'x',scaleratio:1,gridcolor:'#e8edf5',zeroline:false},
-      uirevision:selectedKey+':'+$('multiPlans').checked},config);
+      uirevision:selectedKey},config);
   }
   function layout(axes) {
     const result={...common,showlegend:true,hovermode:'x unified',grid:{rows:axes.length,columns:1,pattern:'independent'},uirevision:selectedKey};
@@ -233,8 +231,8 @@
     const graph=$('trajectory'),last=graph.data.length;
     const valid=r&&r[10];let x=[],y=[],dx=[],dy=[];
     if(valid){x=[r[1],r[4]];y=[r[2],r[5]];
-      if($('showDirections').checked){const span=graph._fullLayout.xaxis.range;
-        const length=(span[1]-span[0])*trajectoryStyle.direction_ratio;dx=[r[1],r[1]+Math.cos(r[3])*length];dy=[r[2],r[2]+Math.sin(r[3])*length];}}
+      const span=graph._fullLayout.xaxis.range;
+      const length=(span[1]-span[0])*trajectoryStyle.direction_ratio;dx=[r[1],r[1]+Math.cos(r[3])*length];dy=[r[2],r[2]+Math.sin(r[3])*length];}
     const xs=[x,dx],ys=[y,dy],indices=[last-2,last-1];
     const span=graph._fullLayout.xaxis.range,endpointLength=(span[1]-span[0])*trajectoryStyle.endpoint_direction_ratio;
     graph.data.forEach((trace,index)=>{
@@ -335,13 +333,11 @@
     await Promise.all([trajectory(),series()]);ready=true;setCursor(range[0]);
   }
   $('aggregateQuality').onchange=showMetrics;$('stage').onchange=showMetrics;$('eventType').onchange=showEvents;
-  for(const id of ['showPlans','showActual','showMarkers','showDirections','multiPlans'])$(id).onchange=async()=>{await trajectory();setCursor(cursor);};
   for(const [key,input] of Object.entries(velocityControls))input.onchange=()=>{
     const indices=$('velocity').data.flatMap((trace,i)=>trace.legendgroup===key?[i]:[]);
     if(indices.length)Plotly.restyle($('velocity'),{visible:input.checked?true:'legendonly'},indices);
   };
   $('timeline').oninput=()=>setCursor(range[0]+Number($('timeline').value)/10000*(range[1]-range[0]));
-  $('resetTrajectory').onclick=()=>Plotly.relayout($('trajectory'),{'xaxis.autorange':true,'yaxis.autorange':true});
   $('resetTime').onclick=()=>{for(const id of ['velocity','errors']){const patch={};for(let i=1;i<=3;i++){const k='xaxis'+(i===1?'':i);patch[k+'.range']=range.slice();Object.assign(patch,Object.fromEntries(Object.entries(ticks(range)).map(([key,value])=>[k+'.'+key,value])));}Plotly.relayout($(id),patch);}};
   for(const [id,graph]of [['exportTrajectory','trajectory'],['exportVelocity','velocity'],['exportErrors','errors']])$(id).onclick=()=>Plotly.downloadImage($(graph),{format:'png',filename:'Track_Insight_'+selectedKey+'_'+graph,width:1500,height:graph==='velocity'?1000:800,scale:1.5});
   $('play').onclick=()=>{playing=!playing;if(playing&&cursor>=range[1])setCursor(range[0]);lastFrame=0;$('play').textContent=playing?'暂停':'播放';};

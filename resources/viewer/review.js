@@ -130,7 +130,7 @@
       body.classList.toggle('review-mode',review);
       updateNavigation(review);
       (review?$('reviewWorkspace'):$('trajectoryPanel')).append(dock);
-      for(const id of ['trajectoryOptions','velocityOptions'])$(id).open=!review;
+      $('velocityOptions').open=!review;
       for(const [id,active]of [['reportMode',!review],['reviewMode',review]]) {
         $(id).classList.toggle('active',active);$(id).setAttribute('aria-pressed',String(active));
       }
