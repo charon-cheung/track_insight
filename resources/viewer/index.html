@@ -5,7 +5,7 @@
 <body><header><div><span class="brand">Track <b>Insight</b></span><span class="tag">OFFLINE ANALYSIS</span></div><span id="runTime"></span></header>
 <div class="shell"><aside id="sidebar"><div class="asideTitle">导航与路径 <span id="pathCount"></span></div><button id="overviewNavigation" class="wide" type="button">跟踪精度总览</button><div id="navigation"></div>
 <div class="asideTitle lower">数据说明</div><p id="evidence"></p><div id="quality"></div>
-<button id="downloadMetrics" class="wide">导出评价指标 CSV</button><p class="small">正式指标来自 C++ 分析层。图形缩放和展示抽样不会改变统计结果。</p></aside>
+<button id="downloadMetrics" class="wide">导出评价指标 CSV</button></aside>
 <main><div class="viewToolbar">
 <div class="viewNavigation"><button id="toggleSidebar" aria-controls="sidebar" aria-expanded="true">收起导航</button><button id="previousSelection" disabled>上一项</button><select id="quickSelection" aria-label="选择导航或路径"></select><button id="nextSelection" disabled>下一项</button><button id="deleteSelection" title="仅从综合模式隐藏，报告模式仍可查看" disabled>删除本项</button></div>
 <div class="viewActions">__TRACK_ARCHIVE_LINK__<button id="manageReviewRecords" type="button">复盘记录</button><label id="favoritePicker" hidden><select id="favoriteSelection" aria-label="星标列表"></select></label><div class="modeSwitch" role="group" aria-label="查看模式"><button id="reportMode" class="active" aria-pressed="true">报告模式</button><button id="reviewMode" aria-pressed="false">综合模式</button></div></div></div>
@@ -15,13 +15,13 @@
 <div id="reviewWorkspace"><div id="chartDeck">
 <section class="panel" id="trajectoryPanel"><div class="panelTitle"><h2>规划路径与实际轨迹</h2><button id="exportTrajectory">PNG</button></div>
 <div id="trajectory" class="trajectory"></div><div id="candidates" hidden></div>
-<div id="playbackDock"><div class="playback"><button id="stepBack" title="后退 50 ms 并暂停" aria-label="步退 50 毫秒">步退</button><button id="play">播放</button><button id="stepForward" title="前进 50 ms 并暂停" aria-label="步进 50 毫秒">步进</button><select id="rate" aria-label="播放倍速"><option>1×</option><option>2×</option></select>
+<div id="playbackDock"><div class="playback"><button id="stepBack" title="后退 50 ms 并暂停" aria-label="步退 50 毫秒">步退</button><button id="play">播放</button><button id="stepForward" title="前进 50 ms 并暂停" aria-label="步进 50 毫秒">步进</button><button id="releaseCursor" type="button" class="cursorPin active" title="解除固定，恢复鼠标联动（Esc）" hidden>已固定 · 解除</button><select id="rate" aria-label="播放倍速"><option>1×</option><option>2×</option></select>
 <input id="timeline" aria-label="轨迹时间轴" type="range" min="0" max="10000" value="0" step="1"><div class="cursorLabels"><span id="cursorTime"></span><span id="cursorTimestamp"></span></div></div>
 <div id="instantReadouts" class="instantReadouts"></div><div id="cursorReadout" class="readout"></div></div></section>
-<section class="panel" id="velocityPanel"><div class="panelTitle"><h2 id="velocityTitle">指令与速度反馈 <small>vx · vy · ω</small></h2><details id="velocityOptions" class="plotOptions" open><summary>显示选项</summary><div class="controls">
+<section class="panel" id="velocityPanel"><div class="panelTitle"><h2 id="velocityTitle">下发指令与速度反馈 <small>vx · vy · ω</small></h2><details id="velocityOptions" class="plotOptions" open><summary>显示选项</summary><div class="controls">
 <label><input type="checkbox" data-velocity-group="command">指令</label><label><input type="checkbox" data-velocity-group="feedback" checked>反馈</label>
-<label><input type="checkbox" data-velocity-group="tracking_raw">原始指令</label><label><input type="checkbox" data-velocity-group="downstream" checked>平滑输出（record 时间）</label>
-<button id="resetTime">完整时间范围</button><button id="exportVelocity">PNG</button></div></details><button id="maximizeVelocity" type="button" aria-controls="velocityView" aria-expanded="false">最大化</button></div>
+<label><input type="checkbox" data-velocity-group="tracking_raw">原始指令(未限幅)</label><label><input type="checkbox" data-velocity-group="downstream" checked>平滑输出（record 时间）</label>
+<button id="resetTime">完整时间范围</button><button id="exportVelocity">PNG</button></div></details><button id="releaseVelocityCursor" type="button" class="cursorPin active" title="解除固定，恢复鼠标联动（Esc）" hidden>已固定 · 解除</button><button id="maximizeVelocity" type="button" aria-controls="velocityView" aria-expanded="false">最大化</button></div>
 <div id="velocity" class="velocity"></div><p class="plotNote">指令使用因果保持，反馈有界插值；残差未做时延补偿。图例可切换曲线，拖动可选择时间范围。</p></section>
 <section class="panel"><div class="panelTitle"><h2>跟踪误差</h2><button id="exportErrors">PNG</button></div><div id="errors" class="errors"></div></section>
 </div></div>

@@ -10,13 +10,13 @@ std::vector<LogEvent> parseLog(const std::filesystem::path& path) {
   const std::regex timestamp(R"(\[([0-9]+\.[0-9]+)\])");
   const std::regex field(R"(([A-Za-z_][A-Za-z_0-9]*)=([^\s,}]+))");
   const std::regex goal(R"(to \(([-+0-9.eE]+),\s*([-+0-9.eE]+)\))");
-  std::vector<LogEvent> events;std::string line;std::size_t number=0;TimestampNs previous=0;int session=0;
+  std::vector<LogEvent> events;std::string line;std::size_t number=0;TimestampNs previous=0;int session=0,navigation_session=0;
   std::optional<unsigned long> revision;
   while(std::getline(input,line)) {
     ++number;line=std::regex_replace(line,ansi,"");std::smatch match;
     if(!std::regex_search(line,match,timestamp))continue;
     LogEvent event;try{event.ns=parseTimestampNs(match[1].str());}catch(...){continue;}
-    if(previous&&event.ns<previous-kSecond){++session;revision.reset();}
+    if(previous&&event.ns<previous-kSecond){++session;++navigation_session;revision.reset();}
     previous=event.ns;event.line=number;event.raw=line;event.source=path.string();
     for(auto it=std::sregex_iterator(line.begin(),line.end(),field);it!=std::sregex_iterator();++it)
       event.fields[(*it)[1].str()]=(*it)[2].str();
@@ -41,7 +41,9 @@ std::vector<LogEvent> parseLog(const std::filesystem::path& path) {
     if(event.kind=="handoff"&&event.fields.count("plan_revision")){
       try{auto value=std::stoul(event.fields.at("plan_revision"));if(revision&&value<=*revision)++session;revision=value;}catch(...){}
     }
-    event.session=session;events.push_back(std::move(event));
+    // Controller revision resets isolate controller evidence, not navigator goals.
+    event.session=event.kind.rfind("navigation_",0)==0?navigation_session:session;
+    events.push_back(std::move(event));
   }
   return events;
 }

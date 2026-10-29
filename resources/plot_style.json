@@ -31,7 +31,7 @@
     ]
   },
   "velocity": {
-    "title": "指令与速度反馈",
+    "title": "下发指令与速度反馈",
     "series": [
       {
         "key": "command",
@@ -52,7 +52,7 @@
       {
         "key": "tracking_raw",
         "signal": "tracking_raw",
-        "label": "原始指令",
+        "label": "原始指令(未限幅)",
         "color": "#000000",
         "dash": "solid",
         "default_visible": false

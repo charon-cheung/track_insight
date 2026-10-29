@@ -12,6 +12,12 @@
   const fmt=(v,d=3)=>v===null||v===undefined?'—':Number(v).toFixed(d);
   const ns=t=>origin+BigInt(Math.round(t*1e9));
   const rel=s=>Number(BigInt(s)-origin)/1e9;
+  function groupedTimestamp(t) {
+    const stamp=ns(t),magnitude=stamp<0n?-stamp:stamp;
+    const seconds=(magnitude/1000000000n).toString();
+    const grouped=seconds.length>3?seconds.slice(0,-3)+'\u00a0\u00a0'+seconds.slice(-3):seconds;
+    return (stamp<0n?'-':'')+grouped+'.'+(magnitude%1000000000n/1000000n).toString().padStart(3,'0');
+  }
   function time(t,full=true) {
     if(!A.clock.wall_clock)return (t<0?'-':'+')+(Math.trunc(Math.abs(t)*1000)/1000).toFixed(3)+' s';
     const stamp=ns(t);let offset=0;
@@ -19,7 +25,7 @@
     const date=new Date(Number(stamp/1000000n)+offset*1000).toISOString();
     return full?date.slice(0,10)+' '+date.slice(11,23):date.slice(11,23);
   }
-  let selected=[],selectedKey='',range=[0,1],cursor=0,playing=false,lastFrame=0,linked=false,ready=false;
+  let selected=[],selectedKey='',range=[0,1],cursor=0,playing=false,lastFrame=0,linked=false,ready=false,cursorPinned=false;
   const config={responsive:true,displaylogo:false,scrollZoom:true,
     modeBarButtonsToRemove:['lasso2d','select2d','sendDataToCloud'],toImageButtonOptions:{format:'png',scale:2}};
   const common={font:{family:'Inter, Noto Sans CJK SC, sans-serif',size:11,color:'#617188'},
@@ -148,15 +154,15 @@
     const traces=[];
     const plans=A.plans.filter(p=>selected.some(s=>s.interval.plan_id===p.id));
     for(const [index,p]of plans.entries())traces.push({x:p.poses.map(r=>r[0]),y:p.poses.map(r=>r[1]),
-      mode:'lines',name:p.id+' '+trajectoryStyle.planned.label,line:{color:trajectoryStyle.plan_palette[index%trajectoryStyle.plan_palette.length],width:2},
-      hovertemplate:p.id+'<br>x %{x:.3f} · y %{y:.3f}<extra></extra>'});
+      mode:'lines',name:trajectoryStyle.planned.label,line:{color:trajectoryStyle.plan_palette[index%trajectoryStyle.plan_palette.length],width:2},
+      hovertemplate:trajectoryStyle.planned.label+'<br>x %{x:.3f} · y %{y:.3f}<extra></extra>'});
     for(const p of selected) {
       const rows=reduce(p.tracking,[1,2,6,7],10,13);
       traces.push({...arrays(rows,r=>r[1],r=>r[2],r=>r[10],r=>r[13],r=>{
         const stamp=BigInt(r[12]),seconds=stamp/1000000000n,millis=stamp%1000000000n/1000000n;
         return time(r[0])+'<br>Timestamp: '+seconds+'.'+millis.toString().padStart(3,'0');
       }),mode:'lines',
-        name:p.interval.plan_id+' '+trajectoryStyle.actual.label,line:{color:trajectoryStyle.actual.color,width:2},hovertemplate:'%{text}<br>x %{x:.3f} · y %{y:.3f}<extra></extra>'});
+        name:trajectoryStyle.actual.label,line:{color:trajectoryStyle.actual.color,width:2},hovertemplate:'%{text}<br>x %{x:.3f} · y %{y:.3f}<extra></extra>'});
       const valid=p.tracking.filter(r=>r[10]);
       if(valid.length)for(const [index,r]of [valid[0],valid.at(-1)].entries()) {
         if(!Number.isFinite(r[3]))continue;
@@ -172,7 +178,7 @@
     traces.push({x:[],y:[],mode:'lines+markers',name:'位置与投影',line:{color:'#e36260',dash:'dot'},
       marker:{size:10,color:['#facc15','#e36260']},showlegend:false,hoverinfo:'skip'});
     traces.push({x:[],y:[],mode:'lines',name:'机器人方向',line:{color:trajectoryStyle.direction,width:4},showlegend:false,hoverinfo:'skip'});
-    await Plotly.react($('trajectory'),traces,{...common,hovermode:'closest',margin:{l:65,r:35,t:30,b:48},
+    await Plotly.react($('trajectory'),traces,{...common,legend:{...common.legend,entrywidth:80,entrywidthmode:'pixels'},hovermode:'closest',margin:{l:65,r:35,t:30,b:48},
       xaxis:{title:A.meta.frame+' x (m)',gridcolor:'#e8edf5',zeroline:false},
       yaxis:{title:A.meta.frame+' y (m)',scaleanchor:'x',scaleratio:1,gridcolor:'#e8edf5',zeroline:false},
       uirevision:selectedKey},config);
@@ -195,7 +201,8 @@
         if(group>=2&&!rows.length)continue;
         const vr=reduce(rows,[1,2,3],4,6),key=presentation.key;
         for(let axis=0;axis<3;axis++)velocity.push({
-          ...arrays(vr,r=>r[0],r=>r[1+axis],r=>r[4],r=>r[6],r=>time(r[0])+(group===3?'<br>'+A.config.topics.downstream+' · bag record 时间':'')),
+          ...arrays(vr,r=>r[0],r=>r[1+axis],r=>r[4],r=>r[6],r=>groupedTimestamp(r[0])),
+          hovertemplate:(key==='tracking_raw'?'原始指令':presentation.label)+': %{text}<br>%{y:.4f}<extra></extra>',
           mode:'lines',name:presentation.label+(group===0?' · '+A.config.topics.command:group===3?' · '+A.config.topics.downstream+'<br>（record 时间）':''),
           legendgroup:key,visible:velocityControls[key].checked?true:'legendonly',showlegend:p===selected[0]&&axis===0,
           xaxis:axis?'x'+(axis+1):'x',yaxis:axis?'y'+(axis+1):'y',
@@ -221,6 +228,18 @@
     while(lo<hi){const m=(lo+hi)>>1;if(rows[m][0]<=t)lo=m+1;else hi=m;}
     const r=rows[lo-1];return r&&t<=r[endIndex]+1e-9?r:null;
   }
+  function setCursorPinned(pinned) {
+    cursorPinned=pinned;
+    for(const id of ['releaseCursor','releaseVelocityCursor'])$(id).hidden=!pinned;
+    if(pinned) {
+      playing=false;lastFrame=0;$('play').textContent='播放';
+      for(const id of ['velocity','errors'])Plotly.Fx.unhover($(id));
+    }
+  }
+  function pinCursor(t) {
+    if(!ready||!Number.isFinite(t))return;
+    setCursorPinned(true);setCursor(t);
+  }
   function setCursor(t) {
     cursor=Math.max(range[0],Math.min(range[1],t));
     $('timeline').value=String((cursor-range[0])/Math.max(range[1]-range[0],1e-9)*10000);
@@ -242,9 +261,7 @@
     });
     Plotly.restyle(graph,{x:xs,y:ys},indices);
     const shapes=[{type:'line',xref:'x',yref:'paper',x0:cursor,x1:cursor,y0:0,y1:1,line:{color:'#7890ae',width:1,dash:'dot'}}];
-    const stamp=ns(cursor),magnitude=stamp<0n?-stamp:stamp;
-    const timestamp=(stamp<0n?'-':'')+magnitude/1000000000n+'.'+
-      (magnitude%1000000000n/1000000n).toString().padStart(3,'0');
+    const timestamp=groupedTimestamp(cursor);
     for(const id of ['velocity','errors']) {
       const plot=$(id),axes=plot._fullLayout,axis=axes.xaxis;
       const pixel=axis.l2p(cursor),halfWidth=Math.min(axis._length,timestamp.length*6.7+10)/2;
@@ -289,7 +306,7 @@
   }
   async function select(paths,key) {
     document.dispatchEvent(new Event('trackinsight:selection'));
-    playing=false;$('play').textContent='播放';ready=false;selected=paths;selectedKey=key;
+    setCursorPinned(false);playing=false;$('play').textContent='播放';ready=false;selected=paths;selectedKey=key;
     for(const b of $('navigation').querySelectorAll('button')) {
       b.classList.toggle('selected',b.dataset.key===key);
       if(b.dataset.key===key&&b.parentElement.matches('details.navigationTask'))b.parentElement.open=true;
@@ -337,10 +354,22 @@
     const indices=$('velocity').data.flatMap((trace,i)=>trace.legendgroup===key?[i]:[]);
     if(indices.length)Plotly.restyle($('velocity'),{visible:input.checked?true:'legendonly'},indices);
   };
-  $('timeline').oninput=()=>setCursor(range[0]+Number($('timeline').value)/10000*(range[1]-range[0]));
+  $('timeline').oninput=()=>{
+    playing=false;lastFrame=0;$('play').textContent='播放';
+    setCursor(range[0]+Number($('timeline').value)/10000*(range[1]-range[0]));
+  };
+  for(const id of ['releaseCursor','releaseVelocityCursor'])$(id).onclick=()=>setCursorPinned(false);
+  let releasingEscape=false;
+  document.addEventListener('keydown',e=>{
+    if(e.key==='Escape'&&(cursorPinned||releasingEscape)) {
+      e.preventDefault();e.stopPropagation();releasingEscape=true;setCursorPinned(false);
+    }
+  },true);
+  document.addEventListener('keyup',e=>{if(e.key==='Escape')releasingEscape=false;},true);
+  window.addEventListener('blur',()=>{releasingEscape=false;});
   $('resetTime').onclick=()=>{for(const id of ['velocity','errors']){const patch={};for(let i=1;i<=3;i++){const k='xaxis'+(i===1?'':i);patch[k+'.range']=range.slice();Object.assign(patch,Object.fromEntries(Object.entries(ticks(range)).map(([key,value])=>[k+'.'+key,value])));}Plotly.relayout($(id),patch);}};
   for(const [id,graph]of [['exportTrajectory','trajectory'],['exportVelocity','velocity'],['exportErrors','errors']])$(id).onclick=()=>Plotly.downloadImage($(graph),{format:'png',filename:'Track_Insight_'+selectedKey+'_'+graph,width:1500,height:graph==='velocity'?1000:800,scale:1.5});
-  $('play').onclick=()=>{playing=!playing;if(playing&&cursor>=range[1])setCursor(range[0]);lastFrame=0;$('play').textContent=playing?'暂停':'播放';};
+  $('play').onclick=()=>{playing=!playing;if(playing)setCursorPinned(false);if(playing&&cursor>=range[1])setCursor(range[0]);lastFrame=0;$('play').textContent=playing?'暂停':'播放';};
   for(const [id,delta] of [['stepBack',-.05],['stepForward',.05]])$(id).onclick=()=>{
     if(!ready)return;
     playing=false;lastFrame=0;$('play').textContent='播放';setCursor(cursor+delta);
@@ -356,7 +385,25 @@
   async function init() {
     if(A.paths.length)await select([A.paths[0]],A.paths[0].interval.id);else if(A.tasks.length)await select([],A.tasks[0].id);else await select([],'empty');
     for(const id of ['velocity','errors']) {
-      $(id).on('plotly_hover',e=>{if(e.points.length)setCursor(e.points[0].x);});
+      const plot=$(id);
+      plot.on('plotly_beforehover',()=>!cursorPinned);
+      plot.on('plotly_hover',e=>{if(!cursorPinned&&e.points.length)setCursor(e.points[0].x);});
+      // A primary click anywhere inside a time subplot pins; drags still belong to Plotly.
+      let press=null;
+      plot.addEventListener('pointerdown',e=>{
+        if(!ready||e.button!==0||!e.isPrimary||!e.target.classList.contains('nsewdrag'))return;
+        const bounds=e.target.getBoundingClientRect(),axis=plot._fullLayout.xaxis;
+        press={id:e.pointerId,x:e.clientX,y:e.clientY,time:axis.p2d(e.clientX-bounds.left)};
+      },true);
+      document.addEventListener('pointermove',e=>{
+        if(press&&e.pointerId===press.id&&Math.hypot(e.clientX-press.x,e.clientY-press.y)>4)press=null;
+      },true);
+      document.addEventListener('pointercancel',()=>{press=null;},true);
+      document.addEventListener('pointerup',e=>{
+        if(!press||e.pointerId!==press.id)return;
+        const clicked=press;press=null;
+        if(e.button===0&&Math.hypot(e.clientX-clicked.x,e.clientY-clicked.y)<=4)pinCursor(clicked.time);
+      },true);
       $(id).on('plotly_relayout',async e=>{
         if(linked)return;
         let bounds=null;

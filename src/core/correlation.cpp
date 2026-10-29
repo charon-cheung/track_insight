@@ -15,7 +15,7 @@ std::vector<Task> navigationTasks(const RunData& data) {
     const std::string uuid=e.fields.count("uuid")?e.fields.at("uuid"):"";
     if(e.kind=="navigation_start") {
       if(!uuid.empty()&&std::any_of(tasks.begin(),tasks.end(),[&](const Task& t){return t.uuid==uuid;}))continue;
-      for(std::size_t i=0;i<tasks.size();++i)if(tasks[i].outcome=="unknown") {
+      for(std::size_t i=0;i<tasks.size();++i)if(tasks[i].reason=="recording_ended_without_result") {
         tasks[i].end=e.ns;tasks[i].outcome=sessions[i]==e.session?"replaced":"unknown";
         tasks[i].reason=sessions[i]==e.session?"next_navigation_start":"session_changed_without_result";
       }
@@ -32,7 +32,7 @@ std::vector<Task> navigationTasks(const RunData& data) {
       if(outcome!="succeeded"&&outcome!="failed"&&outcome!="canceled")continue;
       for(std::size_t i=tasks.size();i>0;--i) {
         auto& t=tasks[i-1];
-        if(t.outcome!="unknown"||sessions[i-1]!=e.session||t.start>e.ns)continue;
+        if(t.reason!="recording_ended_without_result"||sessions[i-1]!=e.session||t.start>e.ns)continue;
         if((!uuid.empty()||!t.uuid.empty())&&uuid!=t.uuid)continue;
         t.outcome=outcome;t.end=e.ns;t.reason="recorded_navigation_result";t.evidence_lines.push_back(e.line);break;
       }

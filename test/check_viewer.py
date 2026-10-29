@@ -376,7 +376,7 @@ async def main():
         assert await evaluate("document.getElementById('trajectory').data.at(-2).x.length>0"),"Cursor position absent"
         await asyncio.sleep(.3)
         assert await evaluate("Array.from(document.querySelector('#trajectoryPanel .panelTitle').querySelectorAll('button,input,select,summary')).map(e=>e.id)")==['exportTrajectory']
-        assert await evaluate("document.getElementById('trajectory').data.some(t=>t.name.endsWith(' 规划')) && document.getElementById('trajectory').data.some(t=>t.name.endsWith(' 实际'))")
+        assert await evaluate("document.getElementById('trajectory').data.some(t=>t.name==='规划') && document.getElementById('trajectory').data.some(t=>t.name==='实际')")
         await evaluate("document.getElementById('play').click()")
         before=await evaluate("trackInsight.cursor")
         await asyncio.sleep(.4)

@@ -39,6 +39,7 @@ struct Plan {
 struct LogEvent {
   TimestampNs ns{0};
   std::size_t line{0};
+  // Navigation lifecycle: clock session; controller events: clock plus revision resets.
   int session{0};
   std::string kind, category{"navigation"}, raw, source;
   std::map<std::string, std::string> fields;

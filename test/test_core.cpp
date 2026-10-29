@@ -249,3 +249,32 @@ TEST(MotionWindow, ActionLifecycleTakesPriorityOverVelocityInference) {
   EXPECT_EQ(result.paths.front().interval.start,0);EXPECT_EQ(result.paths.front().interval.end,10*kSecond);
   EXPECT_EQ(result.paths.front().interval.end_quality,"confirmed");
 }
+
+TEST(Correlation, ClosedUnknownTaskCannotGrowOrReceiveLateResult) {
+  RunData d;d.start=kSecond;d.end=10*kSecond;d.log_compatible=true;
+  d.events={{2*kSecond,1,1,"navigation_start","navigation","","log",{}},
+    {4*kSecond,2,2,"navigation_start","navigation","","log",{}},
+    {5*kSecond,3,2,"navigation_succeeded","navigation","","log",{}},
+    {6*kSecond,4,2,"navigation_start","navigation","","log",{}},
+    {7*kSecond,5,2,"navigation_succeeded","navigation","","log",{}},
+    {8*kSecond,6,1,"navigation_succeeded","navigation","","log",{}}};
+  for(int n=1;n<=3;++n){Plan p;p.id="P"+std::to_string(n);p.poses={{0,0,0},{1,0,0}};
+    p.stamp.record_ns=(2*n)*kSecond+kSecond/2;d.plans.push_back(p);}
+  const auto tasks=navigationTasks(d);ASSERT_EQ(tasks.size(),3U);
+  EXPECT_EQ(tasks[0].outcome,"unknown");EXPECT_EQ(tasks[0].end,4*kSecond);
+  EXPECT_EQ(tasks[0].reason,"session_changed_without_result");
+  const auto windows=executionIntervals(d,tasks);ASSERT_EQ(windows.size(),3U);
+  for(int n=0;n<3;++n)EXPECT_EQ(windows[n].navigation_id,"N"+std::to_string(n+1));
+  EXPECT_EQ(windows[1].end,5*kSecond);EXPECT_EQ(windows[2].end,7*kSecond);
+}
+TEST(Correlation, ReplacementAndUnsuccessfulResultsRemainBounded) {
+  for(const auto& outcome:{"failed","canceled"}) {
+    RunData d;d.start=kSecond;d.end=10*kSecond;d.log_compatible=true;
+    d.events={{2*kSecond,1,0,"navigation_start","navigation","","log",{}},
+      {3*kSecond,2,0,"navigation_start","navigation","","log",{}},
+      {4*kSecond,3,0,std::string("navigation_")+outcome,"navigation","","log",{}}};
+    const auto tasks=navigationTasks(d);ASSERT_EQ(tasks.size(),2U);
+    EXPECT_EQ(tasks[0].outcome,"replaced");EXPECT_EQ(tasks[0].end,3*kSecond);
+    EXPECT_EQ(tasks[1].outcome,outcome);EXPECT_EQ(tasks[1].end,4*kSecond);
+  }
+}

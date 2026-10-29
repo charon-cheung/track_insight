@@ -241,3 +241,30 @@ TEST(Report, StaticFiguresMatchViewerPresentation) {
   EXPECT_NE(readText(output/"figures/P1_errors.svg").find("stroke=\"#1b9c8e\""),std::string::npos);
   EXPECT_EQ(Json::parse(readText(output/"analysis.json"))["paths"],a["paths"]);
 }
+
+TEST(Pipeline, ControllerRevisionResetDoesNotSplitNavigationOrExtendStatistics) {
+  Fixture f;const auto original=readText(f.log);
+  {std::ofstream out(f.log);out<<"[controller] [1792655908.000000000] PID_LOG path_handoff plan_revision=11\n"<<original;}
+  const auto events=parseLog(f.log);ASSERT_EQ(events.size(),5U);
+  EXPECT_EQ(events[1].session,events[4].session);
+  EXPECT_NE(events[0].session,events[2].session);
+  EXPECT_EQ(events[2].session,events[3].session);
+  const auto data=readBag(f.bag,f.log,Config{});ASSERT_TRUE(data.log_compatible);
+  const auto result=evaluate(data,Config{});ASSERT_EQ(result.tasks.size(),1U);ASSERT_EQ(result.paths.size(),1U);
+  EXPECT_EQ(result.tasks[0].outcome,"succeeded");EXPECT_EQ(result.tasks[0].end,f.origin+2*kSecond);
+  const auto& p=result.paths[0];EXPECT_EQ(p.interval.navigation_id,"N1");
+  EXPECT_EQ(p.interval.end,f.origin+2*kSecond);EXPECT_EQ(p.interval.end_quality,"confirmed");
+  EXPECT_EQ(p.interval.start_quality,"confirmed");EXPECT_EQ(p.interval.identity,"confirmed");
+  EXPECT_NEAR(p.metrics.at("lateral").valid_s,1.8,1e-9);
+  EXPECT_NEAR(p.metrics.at("vx_residual").valid_s,1.8,1e-9);
+}
+TEST(Pipeline, LogClockRollbackStillSeparatesNavigationResults) {
+  Fixture f;
+  {std::ofstream out(f.log);out<<"[bt_navigator] [1792655909.000000000] Begin navigating from current location (0, 0) to (1, 0)\n"
+    <<"[controller] [1792655900.000000000] WARN clock reset\n"
+    <<"[bt_navigator] [1792655911.000000000] Goal succeeded\n";}
+  RunData d;d.start=f.origin;d.end=f.origin+4*kSecond;d.log_compatible=true;d.events=parseLog(f.log);
+  ASSERT_EQ(d.events.size(),3U);EXPECT_NE(d.events[0].session,d.events[2].session);
+  const auto tasks=navigationTasks(d);ASSERT_EQ(tasks.size(),1U);
+  EXPECT_EQ(tasks[0].outcome,"unknown");EXPECT_EQ(tasks[0].end,d.end);
+}

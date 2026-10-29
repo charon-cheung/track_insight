@@ -2,3 +2,10 @@
 
 #taskInfo{font-size:11px;line-height:1.5;color:var(--muted)}
 #navigation .navigationTask{margin-top:14px}#navigation .navigationTask summary{cursor:pointer;color:var(--muted)}#navigation .navigationTask summary button{display:inline-block;width:calc(100% - 22px);margin-top:0;vertical-align:middle}#navigation .navigationTask>button{padding-left:26px}
+
+/* Velocity tooltips show each signal timestamp, without a relative-time heading. */
+#velocity .hoverlayer .legendtitletext{display:none}
+
+.cursorPin{white-space:nowrap}
+#releaseVelocityCursor{display:none}
+body.velocity-maximized #releaseVelocityCursor:not([hidden]){display:inline-block}
