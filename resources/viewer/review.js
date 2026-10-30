@@ -63,13 +63,22 @@
       }
     });
     async function resizePlots() {
+      const toolbar=document.querySelector('.viewToolbar');
+      if(getComputedStyle(toolbar).display==='grid') {
+        const black=$('blackFavoritePicker').getBoundingClientRect();
+        if(black.width) {
+          const bounds=toolbar.getBoundingClientRect(),modes=document.querySelector('.modeSwitch').getBoundingClientRect();
+          // Mirror the black picker around the toolbar center while keeping mode buttons at the right edge.
+          toolbar.style.setProperty('--star-picker-gap',Math.max(18,black.left-bounds.left-modes.width)+'px');
+        }
+      }
       if(body.classList.contains('report-overview'))return;
       await Promise.all(graphs.map(id=>Plotly.Plots.resize($(id))));
       const count=body.classList.contains('review-mode')&&!body.classList.contains('velocity-maximized')?3:6;
       for(const id of ['velocity','errors']) {
         const patch={};
-        for(let i=1;i<=3;i++) {
-          const key='xaxis'+(i===1?'':i),bounds=$(id).layout[key].range;
+        for(const key of Object.keys($(id)._fullLayout).filter(key=>/^xaxis\d*$/.test(key))) {
+          const bounds=$(id)._fullLayout[key].range;
           const values=Array.from({length:count},(_,n)=>bounds[0]+(bounds[1]-bounds[0])*n/(count-1));
           patch[key+'.tickvals']=values;patch[key+'.ticktext']=values.map(t=>api.time(t,false));
         }

@@ -12,10 +12,10 @@
   const fmt=(v,d=3)=>v===null||v===undefined?'—':Number(v).toFixed(d);
   const ns=t=>origin+BigInt(Math.round(t*1e9));
   const rel=s=>Number(BigInt(s)-origin)/1e9;
-  function groupedTimestamp(t) {
+  function groupedTimestamp(t,spacing=2) {
     const stamp=ns(t),magnitude=stamp<0n?-stamp:stamp;
     const seconds=(magnitude/1000000000n).toString();
-    const grouped=seconds.length>3?seconds.slice(0,-3)+'\u00a0\u00a0'+seconds.slice(-3):seconds;
+    const grouped=seconds.length>3?seconds.slice(0,-3)+'\u00a0'.repeat(spacing)+seconds.slice(-3):seconds;
     return (stamp<0n?'-':'')+grouped+'.'+(magnitude%1000000000n/1000000n).toString().padStart(3,'0');
   }
   function time(t,full=true) {
@@ -52,7 +52,8 @@
     } else if(paths.length>1) {
       const group=document.createElement('details'),heading=document.createElement('summary');
       group.className='navigationTask';heading.title='展开或收起路径版本';group.append(heading);$('navigation').append(group);
-      button(task.id+' · '+task.outcome,time(rel(task.start_ns),false)+' · '+paths.length+' 条路径',task.id,paths,true,heading);
+      if(task.path_filter_applied)heading.textContent=task.id+' · '+task.outcome+' · '+paths.length+' 条非直线路径';
+      else button(task.id+' · '+task.outcome,time(rel(task.start_ns),false)+' · '+paths.length+' 条路径',task.id,paths,true,heading);
       for(const p of paths)button(p.interval.plan_id,time(p.start,false),p.interval.id,[p],false,group);
     } else button(task.id+' · '+task.outcome,time(rel(task.start_ns),false)+' · 无可评价路径',task.id,paths,true);
   }
@@ -183,15 +184,15 @@
       yaxis:{title:A.meta.frame+' y (m)',scaleanchor:'x',scaleratio:1,gridcolor:'#e8edf5',zeroline:false},
       uirevision:selectedKey},config);
   }
-  function layout(axes) {
+  function layout(axes,bounds=range) {
     const result={...common,showlegend:true,hovermode:'x unified',grid:{rows:axes.length,columns:1,pattern:'independent'},uirevision:selectedKey};
     axes.forEach((label,i)=>{const suffix=i?String(i+1):'';
-      result['xaxis'+suffix]={...ticks(range),range:range.slice(),matches:i?'x':undefined,showticklabels:i===axes.length-1};
+      result['xaxis'+suffix]={...ticks(bounds),range:bounds.slice(),matches:i?'x':undefined,showticklabels:i===axes.length-1};
       result['yaxis'+suffix]={title:label,gridcolor:'#e8edf5',zerolinecolor:'#c3cfdf'};});
     return result;
   }
   async function series() {
-    const velocity=[],errors=[];
+    const velocity=[];
     for(const p of selected) {
       for(let group=0;group<4;group++) {
         const presentation=velocityStyles[group],source=A.signals?.[presentation.signal];
@@ -208,20 +209,26 @@
           xaxis:axis?'x'+(axis+1):'x',yaxis:axis?'y'+(axis+1):'y',
           line:{color:presentation.color,width:1.5,dash:presentation.dash,shape:group===1?'linear':'hv'}});
       }
+    }
+    for(const [key,input] of Object.entries(velocityControls))input.disabled=!velocity.some(trace=>trace.legendgroup===key);
+    await Promise.all([Plotly.react($('velocity'),velocity,{...layout(['vx (m/s)','vy (m/s)','ω (rad/s)']),
+        legend:{...common.legend,y:1.02,yanchor:'bottom'}},config),errorSeries()]);
+  }
+  async function errorSeries(bounds=range) {
+    const hasYaw=selected.some(p=>p.tracking.some(r=>r[10]&&Number.isFinite(r[9])));
+    $('yawErrorOption').hidden=!hasYaw;
+    $('showYawError').disabled=!hasYaw;
+    const labels=style.errors.labels.slice(0,hasYaw&&$('showYawError').checked?3:2),errors=[];
+    for(const p of selected) {
       const tr=reduce(p.tracking,[6,7,9],10,13);
-      for(let axis=0;axis<3;axis++) {
+      for(let axis=0;axis<labels.length;axis++) {
         const col=[6,7,9][axis];
-        errors.push({...arrays(tr,r=>r[0],r=>r[col],r=>r[10]&&r[col]!==null,r=>r[13]),
+        errors.push({...arrays(tr,r=>r[0],r=>axis===2?r[col]*180/Math.PI:r[col],r=>r[10]&&Number.isFinite(r[col]),r=>r[13]),
           mode:'lines',name:['横向','路径距离','姿态'][axis],showlegend:false,
           xaxis:axis?'x'+(axis+1):'x',yaxis:axis?'y'+(axis+1):'y',line:{color:style.errors.colors[axis],width:1.5}});
       }
     }
-    for(const [key,input] of Object.entries(velocityControls))input.disabled=!velocity.some(trace=>trace.legendgroup===key);
-    const el=layout(style.errors.labels);
-    if(!selected.some(p=>p.tracking.some(r=>r[9]!==null)))el.annotations=[{xref:'paper',yref:'paper',x:.5,y:.12,text:style.errors.unavailable_yaw,showarrow:false,font:{size:12,color:'#8b7894'}}];
-    await Promise.all([Plotly.react($('velocity'),velocity,{...layout(['vx (m/s)','vy (m/s)','ω (rad/s)']),
-        legend:{...common.legend,y:1.02,yanchor:'bottom'}},config),
-      Plotly.react($('errors'),errors,el,config)]);
+    await Plotly.react($('errors'),errors,layout(labels,bounds),config);
   }
   function findAt(rows,t,endIndex) {
     let lo=0,hi=rows.length;
@@ -328,12 +335,9 @@
     $('windowDate').textContent=startDate===endDate?startDate:startDate+' — '+endDate;
     $('windowDate').hidden=!A.clock.wall_clock;
     $('windowClockRange').textContent=time(range[0],false)+' — '+time(range[1],false);
-    $('windowEpochRange').textContent=range.map(t=>{
-      const stamp=ns(t),value=stamp<0n?-stamp:stamp;
-      return (stamp<0n?'-':'')+value/1000000000n+'.'+(value%1000000000n/1000000n).toString().padStart(3,'0');
-    }).join(' — ');
+    $('windowEpochRange').textContent='('+range.map(t=>groupedTimestamp(t,3)).join(' — ')+')';
     $('windowEpochRange').title='开始 — 结束（秒，精确到毫秒）';
-    $('windowDuration').textContent=duration;
+    $('windowDuration').textContent='\u00a0耗时'+fmt(range[1]-range[0],2)+'s';
     $('taskInfo').hidden=!task;
     if(task) {
       const reason={next_navigation_start:'被下一次导航替换',recorded_navigation_result:'已记录导航结果',recording_ended_without_result:'录制结束时未记录结果',session_changed_without_result:'会话切换时未记录结果'}[task.reason]||task.reason;
@@ -367,7 +371,19 @@
   },true);
   document.addEventListener('keyup',e=>{if(e.key==='Escape')releasingEscape=false;},true);
   window.addEventListener('blur',()=>{releasingEscape=false;});
-  $('resetTime').onclick=()=>{for(const id of ['velocity','errors']){const patch={};for(let i=1;i<=3;i++){const k='xaxis'+(i===1?'':i);patch[k+'.range']=range.slice();Object.assign(patch,Object.fromEntries(Object.entries(ticks(range)).map(([key,value])=>[k+'.'+key,value])));}Plotly.relayout($(id),patch);}};
+  $('showYawError').onchange=async()=>{
+    await errorSeries($('errors')._fullLayout.xaxis.range.slice());setCursor(cursor);
+  };
+  $('resetTime').onclick=()=>{
+    for(const id of ['velocity','errors']) {
+      const plot=$(id),patch={};
+      for(const k of Object.keys(plot._fullLayout).filter(k=>/^xaxis\d*$/.test(k))) {
+        patch[k+'.range']=range.slice();
+        for(const [name,value] of Object.entries(ticks(range)))patch[k+'.'+name]=value;
+      }
+      Plotly.relayout(plot,patch);
+    }
+  };
   for(const [id,graph]of [['exportTrajectory','trajectory'],['exportVelocity','velocity'],['exportErrors','errors']])$(id).onclick=()=>Plotly.downloadImage($(graph),{format:'png',filename:'Track_Insight_'+selectedKey+'_'+graph,width:1500,height:graph==='velocity'?1000:800,scale:1.5});
   $('play').onclick=()=>{playing=!playing;if(playing)setCursorPinned(false);if(playing&&cursor>=range[1])setCursor(range[0]);lastFrame=0;$('play').textContent=playing?'暂停':'播放';};
   for(const [id,delta] of [['stepBack',-.05],['stepForward',.05]])$(id).onclick=()=>{
@@ -409,8 +425,13 @@
         let bounds=null;
         for(let i=1;i<=3;i++){const k='xaxis'+(i===1?'':i);if(e[k+'.range[0]']!==undefined)bounds=[e[k+'.range[0]'],e[k+'.range[1]']];if(Array.isArray(e[k+'.range']))bounds=e[k+'.range'];}
         if(!bounds)return;linked=true;
-        const patch={};for(let i=1;i<=3;i++){const k='xaxis'+(i===1?'':i);patch[k+'.range']=bounds;for(const [name,value]of Object.entries(ticks(bounds)))patch[k+'.'+name]=value;}
-        try{await Promise.all(['velocity','errors'].map(id=>Plotly.relayout($(id),patch)));setCursor(cursor);}finally{linked=false;}
+        try{await Promise.all(['velocity','errors'].map(id=>{
+          const graph=$(id),patch={};
+          for(const k of Object.keys(graph._fullLayout).filter(k=>/^xaxis\d*$/.test(k))) {
+            patch[k+'.range']=bounds;for(const [name,value]of Object.entries(ticks(bounds)))patch[k+'.'+name]=value;
+          }
+          return Plotly.relayout(graph,patch);
+        }));setCursor(cursor);}finally{linked=false;}
       });
     }
     $('velocity').on('plotly_restyle',()=>{

@@ -81,7 +81,8 @@ async def main():
                 await frozen()  # Fails on the original hover-only implementation.
                 assert await js("!document.getElementById('releaseCursor').hidden")
                 for graph in ['velocity', 'errors']:
-                    for axis in [1, 2, 3]:
+                    axes=await js("Object.keys(document.getElementById('"+graph+"')._fullLayout).filter(k=>/^xaxis[0-9]*$/.test(k)).map(k=>Number(k.slice(5)||1))")
+                    for axis in axes:
                         before = await js('trackInsight.cursor')
                         await click(graph, .4 + axis*.07, axis)
                         after = await frozen()
@@ -165,7 +166,7 @@ async def main():
                 assert not errors, errors
                 await call('Browser.close')
                 chrome.wait(timeout=10)
-                print('PASS: pin/repin all six subplots; synchronized freeze; step/seek/play; zoom; release; mode/maximize/Escape; case reset; no JS exceptions')
+                print('PASS: pin/repin all visible subplots; synchronized freeze; step/seek/play; zoom; release; mode/maximize/Escape; case reset; no JS exceptions')
         finally:
             if chrome.poll() is None:
                 chrome.terminate()

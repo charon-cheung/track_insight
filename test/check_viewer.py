@@ -313,9 +313,9 @@ async def main():
             await asyncio.sleep(.3)
             return await evaluate("document.getElementById('reviewRecordsStatus').textContent")
         try:
-            await evaluate("(()=>{const m=trackInsight.analysis.meta,i=JSON.stringify([m.input_sha256,m.start_ns,m.end_ns]);localStorage.setItem('trackInsight:favorites:v1:'+i,JSON.stringify(['E1']));localStorage.setItem('trackInsight:hidden:v1:'+i,JSON.stringify(['E2']));})()")
+            await evaluate("(()=>{const m=trackInsight.analysis.meta,i=JSON.stringify([m.input_sha256,m.start_ns,m.end_ns]);localStorage.removeItem('trackInsight:stars:v2:'+i);localStorage.setItem('trackInsight:favorites:v1:'+i,JSON.stringify(['E1']));localStorage.setItem('trackInsight:hidden:v1:'+i,JSON.stringify(['E2']));})()")
             await reload_records()
-            assert await evaluate("document.getElementById('toggleFavorite').getAttribute('aria-pressed')")=='true','Old favorite was lost'
+            assert await evaluate("document.getElementById('toggleBlackFavorite').getAttribute('aria-pressed')")=='true','Old favorite was lost'
             assert not await evaluate("[...document.getElementById('quickSelection').options].some(o=>o.value==='E2')"),'Old hidden item was lost'
             await evaluate("document.getElementById('manageReviewRecords').click()")
             assert await evaluate("document.getElementById('reviewRecordsDialog').matches(':modal')")
@@ -331,11 +331,11 @@ async def main():
                 await asyncio.sleep(.1)
             assert downloads,'No review record download'
             record=json.loads(max(downloads,key=lambda p:p.stat().st_mtime_ns).read_text())
-            assert record['favorites']==['E1'] and record['hidden']==['E2'],record
+            assert record['schema_version']==2 and record['favorites']=={'red':[], 'black':['E1']} and record['hidden']==['E2'],record
             await evaluate("document.querySelector('#hiddenReviewRecords [data-key=E2] button').click()")
             assert await evaluate("[...document.getElementById('quickSelection').options].some(o=>o.value==='E2')")
             before_metrics=await evaluate("JSON.stringify(trackInsight.analysis.overview)")
-            record['favorites'].append('E2')
+            record['favorites']['red'].append('E2')
             assert '导入完成' in await import_record(record)
             assert not await evaluate("[...document.getElementById('quickSelection').options].some(o=>o.value==='E2')")
             snapshot="Object.fromEntries(Object.entries(localStorage).filter(([key])=>key.startsWith('trackInsight:')))"

@@ -52,18 +52,43 @@
     }
     root.append(element('h1','跟踪精度总览'));
     const ranked=summary?.ranked_cases||0,excluded=summary?.excluded_cases||0;
-    root.append(element('p',cases.length+' 个路径 case · 横向精度可评价 '+ranked+' 个 · 排除 failed / replaced '+excluded+' 个','overviewNote'));
+    root.append(element('p',cases.length+' 个路径 case · 横向精度可评价 '+ranked+' 个 · 排除 failed / replaced '+excluded+' 个 · 排除直线路径 '+(summary?.excluded_straight_case_ids?.length||0)+' 个（最大偏离 ≤ 2 cm）','overviewNote'));
     root.append(element('p','每个 P 路径执行区间统计一次，不重复计入导航 N 总览；综合模式中隐藏的 case 仍参与本报告。','overviewNote'));
     const all=panel('所有 case 的跟踪精度');
     const listing=table(['Case',...columns.map(c=>c[2])]);
     listing.body.id='overviewCases';
+    const caseRows=[];
     for(const p of cases) {
       const row=element('tr');row.dataset.case=p.interval.id;
       const label=element('td');label.append(caseButton(p));row.append(label);
       const values=columns.map(([key,stat])=>fmt(p.metrics[key]?.[stat]));
       for(const value of values)row.append(element('td',value));listing.body.append(row);
+      caseRows.push({path:p,row,index:caseRows.length});
     }
     if(!cases.length){const row=element('tr'),cell=element('td','没有符合条件的路径 case。');cell.colSpan=columns.length+1;row.append(cell);listing.body.append(row);}
+    let sortStat=null,ascending=true;
+    const sortHeaders=columns.slice(0,3).map(([,stat,label],index)=>{
+      const header=listing.scroll.querySelectorAll('th')[index+1],button=element('button',label+' ↕','overviewSort');
+      button.type='button';button.setAttribute('aria-label',label+'，升序排序');
+      header.setAttribute('aria-sort','none');header.replaceChildren(button);
+      button.onclick=()=>{
+        ascending=sortStat===stat?!ascending:true;sortStat=stat;
+        const ordered=caseRows.slice().sort((a,b)=>{
+          const x=a.path.metrics.lateral?.[stat],y=b.path.metrics.lateral?.[stat];
+          const validX=Number.isFinite(x),validY=Number.isFinite(y);
+          if(validX!==validY)return validX?-1:1;
+          return (validX?(ascending?x-y:y-x):0)||a.index-b.index;
+        });
+        for(const entry of ordered)listing.body.append(entry.row);
+        for(const item of sortHeaders) {
+          const active=item.stat===stat;
+          item.header.setAttribute('aria-sort',active?(ascending?'ascending':'descending'):'none');
+          item.button.textContent=item.label+' '+(active?(ascending?'↑':'↓'):'↕');
+          item.button.setAttribute('aria-label',item.label+'，'+(active&&ascending?'降序':'升序')+'排序');
+        }
+      };
+      return {stat,label,header,button};
+    });
     all.append(listing.scroll);root.append(all);
     const averages=panel('所有 case 的平均跟踪精度');
     const means=table(['指标','case 平均 RMSE','整体 RMSE（按有效时长合并）','纳入 case 数']);

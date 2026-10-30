@@ -3,7 +3,7 @@
 #overviewNavigation.selected{background:#e4edfc;color:#1756a4;border-left:3px solid var(--blue)}
 .review-mode #overviewNavigation{display:none}
 .report-overview .titleRow,.report-overview #cards,.report-overview #reviewWorkspace,.report-overview .reportOnly{display:none}
-.report-overview #previousSelection,.report-overview #quickSelection,.report-overview #nextSelection,.report-overview #deleteSelection,.report-overview #favoritePicker{display:none}
+.report-overview #previousSelection,.report-overview #quickSelection,.report-overview #nextSelection,.report-overview #deleteSelection,.report-overview #favoritePicker,.report-overview #blackFavoritePicker{display:none}
 #reportOverview h1{margin:6px 0 10px;font-size:25px}
 .overviewNote{color:var(--muted);font-size:12px;line-height:1.8;margin:7px 0 15px}
 #reportOverview .panel{margin:16px 0}
@@ -17,3 +17,6 @@
 .overviewExtremes>.panel{min-width:0}
 .overviewCase{font-size:12px;font-weight:400;color:var(--muted);padding:0 16px;margin:13px 0}
 @media(max-width:1200px){.overviewExtremes{grid-template-columns:minmax(0,1fr)}}
+
+#reportOverview .overviewSort{border:0;background:none;padding:0;color:inherit;font:inherit;white-space:nowrap}
+#reportOverview .overviewSort:hover,#reportOverview th[aria-sort="ascending"] .overviewSort,#reportOverview th[aria-sort="descending"] .overviewSort{color:var(--blue)}

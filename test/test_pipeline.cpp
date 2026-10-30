@@ -19,7 +19,7 @@ namespace {
 struct Fixture {
   std::filesystem::path root,bag,log;
   TimestampNs origin{1792655909000000000LL};
-  Fixture(bool with_tracking_raw=false,bool stamped=true,bool with_downstream=false) {
+  Fixture(bool with_tracking_raw=false,bool stamped=true,bool with_downstream=false,bool curved=false) {
     auto name=(std::filesystem::temp_directory_path()/"track_insight_fixture_XXXXXX").string();
     std::vector<char> chars(name.begin(),name.end());chars.push_back(0);root=mkdtemp(chars.data());
     bag=root/"bag";log=root/"nav2.log";
@@ -30,6 +30,7 @@ struct Fixture {
       if(j==2) {
         nav_msgs::msg::Path path;path.header.stamp=time;path.header.frame_id="map";
         geometry_msgs::msg::PoseStamped p;p.header=path.header;p.pose.orientation.w=1;path.poses.push_back(p);
+        if(curved){p.pose.position.x=.5;p.pose.position.y=.05;path.poses.push_back(p);p.pose.position.y=0;}
         p.pose.position.x=1;path.poses.push_back(p);writer.write(path,"/plan",time);
       }
       tf2_msgs::msg::TFMessage tf;geometry_msgs::msg::TransformStamped transform;
@@ -60,7 +61,7 @@ struct Fixture {
     writer.close();
     std::ofstream out(log);
     out<<"[bt_navigator] [1792655909.000000000] Begin navigating from current location (0, 0.1) to (1, 0)\n"
-       <<"[controller] [1792655909.200000000] PID_LOG path_handoff plan_revision=1 frame=map poses=2 path_stamp_ns="<<origin+200000000<<"\n"
+       <<"[controller] [1792655909.200000000] PID_LOG path_handoff plan_revision=1 frame=map poses="<<(curved?3:2)<<" path_stamp_ns="<<origin+200000000<<"\n"
        <<"[controller] [1792655909.200000000] PID_LOG tracking_state plan_revision=1 command_stamp_ns="<<origin+200000000<<" target_yaw=0\n"
        <<"[bt_navigator] [1792655911.000000000] Goal succeeded\n";
   }
@@ -97,7 +98,7 @@ TEST(Pipeline, McapZipAndKnownMetricsMatch) {
 }
 TEST(Pipeline, TrackingRawVelocityPreservesTimeGapsAndExistingMetrics) {
   for(bool stamped:{false,true}) {
-    Fixture f(true,stamped);Config c;const auto data=readBag(f.bag,f.log,c);
+    Fixture f(true,stamped,false,true);Config c;const auto data=readBag(f.bag,f.log,c);
     ASSERT_EQ(data.tracking_raw.size(),38U);ASSERT_EQ(data.commands.size(),41U);
     const auto& first=data.tracking_raw.front();
     EXPECT_EQ(first.stamp.source,"/tracking_cmd_vel_raw");
@@ -128,7 +129,7 @@ TEST(Pipeline, TrackingRawVelocityPreservesTimeGapsAndExistingMetrics) {
 }
 TEST(Pipeline, DownstreamUsesRecordTimeDespiteReusedOrStaleHeaders) {
   for(bool stamped:{false,true}) {
-    Fixture f(false,stamped,true);Config c;const auto data=readBag(f.bag,f.log,c);
+    Fixture f(false,stamped,true,true);Config c;const auto data=readBag(f.bag,f.log,c);
     ASSERT_EQ(data.downstream.size(),38U);
     for(const auto& v:data.downstream) {
       EXPECT_EQ(v.stamp.ns,v.stamp.record_ns);EXPECT_EQ(v.stamp.clock_domain,"bag_record");
@@ -165,7 +166,7 @@ TEST(Pipeline, OverlappingButUnprovenLogDoesNotCreateNavigation) {
   const auto data=readBag(f.bag,f.log,Config{});EXPECT_FALSE(data.log_compatible);EXPECT_TRUE(evaluate(data,Config{}).tasks.empty());
 }
 TEST(Report, SavedAnalysisRendersWithoutSourceAndProtectsUserFiles) {
-  Fixture f;Config c;auto data=readBag(f.bag,f.log,c);
+  Fixture f(false,true,false,true);Config c;auto data=readBag(f.bag,f.log,c);
   auto a=makeAnalysis(data,evaluate(data,c),c,captureDisplayClock(data.start,data.end,true));
   ASSERT_TRUE(a["paths"][0]["tracking"][0][12].is_string());
   const auto saved=f.root/"analysis.json";writeText(saved,a.dump());std::filesystem::remove_all(f.bag);std::filesystem::remove(f.log);
@@ -183,7 +184,7 @@ TEST(Report, SavedAnalysisRendersWithoutSourceAndProtectsUserFiles) {
   EXPECT_EQ(readText(output/"user-note.txt"),"keep");
 }
 TEST(Report, FailedPngConversionReplacesPriorManifestWithPartial) {
-  Fixture f;Config c;auto data=readBag(f.bag,{},c);auto a=makeAnalysis(data,evaluate(data,c),c,captureDisplayClock(data.start,data.end,true));
+  Fixture f(false,true,false,true);Config c;auto data=readBag(f.bag,{},c);auto a=makeAnalysis(data,evaluate(data,c),c,captureDisplayClock(data.start,data.end,true));
   const auto output=f.root/"report";ASSERT_EQ(renderReport(a,output,TRACK_INSIGHT_RESOURCES),0);
   const char* original=getenv("PATH");const std::string path=original?original:"";setenv("PATH","/nonexistent",1);
   int status=1;try{status=renderReport(a,output,TRACK_INSIGHT_RESOURCES,true);}catch(...){setenv("PATH",path.c_str(),1);throw;}
@@ -221,7 +222,7 @@ TEST(Pipeline, CorruptPathKeepsPublicationIdentityAsUnavailable) {
 }
 
 TEST(Report, StaticFiguresMatchViewerPresentation) {
-  Fixture f(true,true,true);Config c;const auto data=readBag(f.bag,f.log,c);
+  Fixture f(true,true,true,true);Config c;const auto data=readBag(f.bag,f.log,c);
   const auto a=makeAnalysis(data,evaluate(data,c),c,captureDisplayClock(data.start,data.end,true));
   const auto output=f.root/"visual_report";ASSERT_EQ(renderReport(a,output,TRACK_INSIGHT_RESOURCES),0);
   const auto trajectory=readText(output/"figures/P1_trajectory.svg");
@@ -267,4 +268,20 @@ TEST(Pipeline, LogClockRollbackStillSeparatesNavigationResults) {
   ASSERT_EQ(d.events.size(),3U);EXPECT_NE(d.events[0].session,d.events[2].session);
   const auto tasks=navigationTasks(d);ASSERT_EQ(tasks.size(),1U);
   EXPECT_EQ(tasks[0].outcome,"unknown");EXPECT_EQ(tasks[0].end,d.end);
+}
+
+TEST(Report, StraightOnlyReportIsEmptyButSavedAnalysisRetainsOriginalCases) {
+  Fixture f;Config c;const auto data=readBag(f.bag,f.log,c);
+  const auto a=makeAnalysis(data,evaluate(data,c),c,captureDisplayClock(data.start,data.end,true));
+  const auto output=f.root/"straight_report";ASSERT_EQ(renderReport(a,output,TRACK_INSIGHT_RESOURCES),0);
+  const auto saved=Json::parse(readText(output/"analysis.json"));EXPECT_EQ(saved["paths"],a["paths"]);
+  EXPECT_EQ(saved["plans"],a["plans"]);EXPECT_TRUE(saved["overview"]["case_ids"].empty());
+  const auto metrics=Json::parse(readText(output/"metrics.json"));EXPECT_TRUE(metrics["paths"].empty());
+  EXPECT_TRUE(metrics["navigation"].empty());
+  EXPECT_FALSE(std::filesystem::exists(output/"figures/P1_trajectory.svg"));
+  const auto html=readText(output/"report.html");
+  const auto start=html.find("id=\"analysis\"");
+  ASSERT_NE(start,std::string::npos);const auto data_start=html.find('>',start)+1;
+  const auto embedded=Json::parse(html.substr(data_start,html.find("</script>",data_start)-data_start));
+  EXPECT_TRUE(embedded["paths"].empty());EXPECT_TRUE(embedded["plans"].empty());EXPECT_TRUE(embedded["tasks"].empty());
 }

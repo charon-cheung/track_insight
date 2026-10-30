@@ -29,7 +29,7 @@ add_library(track_insight_ros_io
 target_link_libraries(track_insight_ros_io PUBLIC track_insight_core LibArchive::LibArchive OpenSSL::Crypto)
 ament_target_dependencies(track_insight_ros_io PUBLIC
   rclcpp rosbag2_cpp rosbag2_storage tf2 tf2_msgs nav_msgs geometry_msgs action_msgs)
-  add_library(track_insight_report src/report/serialization.cpp src/report/figures.cpp src/report/report.cpp src/report/overview.cpp src/report/archive.cpp)
+  add_library(track_insight_report src/report/serialization.cpp src/report/figures.cpp src/report/report.cpp src/report/overview.cpp src/report/path_filter.cpp src/report/archive.cpp)
   target_link_libraries(track_insight_report PUBLIC track_insight_core nlohmann_json::nlohmann_json)
   add_executable(track_insight src/main.cpp)
   target_link_libraries(track_insight PRIVATE track_insight_ros_io track_insight_report)

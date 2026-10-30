@@ -2,8 +2,12 @@
 #include "track_insight/domain.hpp"
 #include <nlohmann/json.hpp>
 #include <functional>
+#include <set>
 namespace track_insight {
 using Json=nlohmann::json;
+inline constexpr double kStraightPathTolerance=0.02;
+std::set<std::string> straightPlanIds(const Json& analysis);
+void excludeStraightPaths(Json& analysis);
 Json makeOverview(const Json& analysis);
 Json makeAnalysis(const RunData& data,const Evaluation& evaluation,const Config& config,
                   const DisplayClock& clock);

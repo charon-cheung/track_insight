@@ -5,10 +5,12 @@
 
 namespace track_insight {
 Json makeOverview(const Json& analysis) {
+  const auto straight=straightPlanIds(analysis);
   std::map<std::string,std::string> outcomes;
   for(const auto& task:analysis.at("tasks"))outcomes[task.at("id")]=task.at("outcome");
   Json result={{"case_ids",Json::array()},{"best_ids",Json::array()},{"worst_ids",Json::array()},
-    {"excluded_cases",0},{"ranked_cases",0},{"ranking_metric","lateral.rmse"},{"averages",Json::object()}};
+    {"excluded_straight_plan_ids",straight},{"excluded_straight_case_ids",Json::array()},
+    {"straight_path_tolerance_m",kStraightPathTolerance},{"excluded_cases",0},{"ranked_cases",0},{"ranking_metric","lateral.rmse"},{"averages",Json::object()}};
   struct Average { long double sum{0},squares{0},weight{0},candidate{0};std::size_t count{0};std::string unit; };
   std::map<std::string,Average> averages;
   const std::set<std::string> keys{"lateral","path_distance","yaw_error","vx_residual","vy_residual",
@@ -16,6 +18,9 @@ Json makeOverview(const Json& analysis) {
   std::optional<double> best,worst;
   for(const auto& path:analysis.at("paths")) {
     const auto& interval=path.at("interval");
+    if(straight.count(interval.value("plan_id",""))) {
+      result["excluded_straight_case_ids"].push_back(interval.at("id"));continue;
+    }
     const auto outcome=outcomes.find(interval.at("navigation_id").get<std::string>());
     if(outcome!=outcomes.end()&&(outcome->second=="replaced"||outcome->second=="failed")) {
       result["excluded_cases"]=result["excluded_cases"].get<int>()+1;continue;

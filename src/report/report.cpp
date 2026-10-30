@@ -79,6 +79,9 @@ int renderReport(Json analysis,const fs::path& requested,const fs::path& resourc
   if(fs::exists(staging)||fs::exists(backup)){fs::remove(lock);throw std::runtime_error("stale transaction path; choose a new output");}
   fs::create_directory(staging);bool backed_up=false;
   try {
+    // Preserve complete source analysis for later re-rendering; filter all published views and metrics.
+    const auto source_analysis=analysis.dump();
+    excludeStraightPaths(analysis);
     std::vector<std::string> failures;
     const auto plot_style=Json::parse(readText(resources/"plot_style.json"));
     auto files=writeFigures(analysis,plot_style,staging,failures,[&](double fraction){if(progress)progress(.85*fraction);});
@@ -98,7 +101,10 @@ int renderReport(Json analysis,const fs::path& requested,const fs::path& resourc
     Json summary={{"metric_version",analysis["metric_version"]},{"paths",Json::array()},
       {"navigation",analysis["navigation_metrics"]},{"overview",analysis["overview"]}};
     for(const auto& p:analysis["paths"])summary["paths"].push_back({{"interval",p["interval"]},{"metrics",p["metrics"]},{"stages",p["stages"]}});
-    writeText(fs::path(staging)/"analysis.json",analysis.dump());
+    {
+      auto source=Json::parse(source_analysis);source["generation"]=analysis["generation"];
+      writeText(fs::path(staging)/"analysis.json",source.dump());
+    }
     writeText(fs::path(staging)/"metrics.json",summary.dump(2));
     writeText(fs::path(staging)/"metrics.csv",metricCsv(analysis));
     if(progress)progress(.9);

@@ -113,3 +113,17 @@ TEST_F(ArchiveTest, SwappedIdentityAndMalformedSummaryNeverReplaceAnotherRound) 
 }
 
 }
+
+TEST_F(ArchiveTest, StraightPathsDoNotEnterArchiveCountsMeansOrBestWorst) {
+  auto a=analysis();
+  a["plans"]=Json::array({{{"id","P1"},{"valid",true},{"poses",{{0,0,0},{1,0,0}}}},
+    {{"id","P2"},{"valid",true},{"poses",{{0,0,0},{.5,.1,0},{1,0,0}}}},
+    {{"id","P3"},{"valid",true},{"poses",{{0,0,0},{1,0,0}}}}});
+  const auto result=render(a);ASSERT_EQ(result.code,0);const auto row=catalog()["runs"][0];
+  EXPECT_EQ(row["paths"],1);EXPECT_EQ(row["overview"]["case_ids"],Json::array({"E2"}));
+  EXPECT_EQ(row["overview"]["best_ids"],Json::array({"E2"}));
+  EXPECT_EQ(row["overview"]["worst_ids"],Json::array({"E2"}));
+  EXPECT_DOUBLE_EQ(row["overview"]["averages"]["lateral"]["case_mean_rmse"].get<double>(),.2);
+  const auto saved=Json::parse(readText(result.report.parent_path()/"analysis.json"));
+  EXPECT_EQ(saved["paths"],a["paths"]);EXPECT_EQ(saved["plans"],a["plans"]);
+}

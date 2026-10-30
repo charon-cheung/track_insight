@@ -48,3 +48,52 @@ TEST(Overview, EachSignalUsesItsOwnValidDurationAndDoesNotRoundRanking) {
   EXPECT_EQ(m["case_count"],1);EXPECT_NEAR(m["pooled_rmse"].get<double>(),.2,1e-12);
   EXPECT_NEAR(m["coverage"].get<double>(),.125,1e-12);
 }
+
+TEST(Overview, StraightPathsAreExcludedFromEveryAverageAndRankingAtTwoCentimeters) {
+  Json a={{"tasks",Json::array()},{"plans",Json::array()},{"paths",Json::array()}};
+  const std::vector<double> offsets{0,.02,.020001,.1};
+  for(std::size_t i=0;i<offsets.size();++i) {
+    const auto id="P"+std::to_string(i+1);auto p=path("E"+std::to_string(i+1),"",i<2?9.0:.1*(i-1),1,1);
+    p["interval"]["plan_id"]=id;a["paths"].push_back(p);
+    a["plans"].push_back({{"id",id},{"valid",true},{"poses",{{0,0,0},{.5,offsets[i],2},{1,0,3}}}});
+  }
+  const auto result=makeOverview(a);
+  EXPECT_EQ(result["case_ids"],Json::array({"E3","E4"}));
+  EXPECT_EQ(result["best_ids"],Json::array({"E3"}));EXPECT_EQ(result["worst_ids"],Json::array({"E4"}));
+  EXPECT_NEAR(result["averages"]["lateral"]["case_mean_rmse"].get<double>(),.15,1e-12);
+  EXPECT_NEAR(result["averages"]["lateral"]["pooled_rmse"].get<double>(),std::sqrt(.025),1e-12);
+  a["paths"].erase(a["paths"].begin()+2,a["paths"].end());
+  const auto empty=makeOverview(a);EXPECT_TRUE(empty["case_ids"].empty());
+  EXPECT_TRUE(empty["best_ids"].empty());EXPECT_TRUE(empty["averages"].empty());
+}
+
+TEST(Overview, GeometryUsesFiniteSegmentAndIgnoresHeadingWithoutGuessingInvalidPaths) {
+  Json a={{"plans",Json::array({
+    {{"id","vertical"},{"valid",true},{"poses",{{2,1,0},{2.02,2,1},{2,3,2}}}},
+    {{"id","diagonal"},{"valid",true},{"poses",{{0,0,0},{1,1,1},{2,2,2}}}},
+    {{"id","overshoot"},{"valid",true},{"poses",{{0,0},{2,0},{1,0}}}},
+    {{"id","closed"},{"valid",true},{"poses",{{0,0},{1,0},{0,0}}}},
+    {{"id","short"},{"valid",true},{"poses",{{0,0}}}},
+    {{"id","invalid"},{"valid",false},{"poses",{{0,0},{1,0}}}},
+    {{"id","missing"},{"valid",true},{"poses",{{0,0},{nullptr,0},{1,0}}}}
+  })}};
+  EXPECT_EQ(straightPlanIds(a),(std::set<std::string>{"vertical","diagonal"}));
+}
+
+TEST(Overview, ReportProjectionRemovesStraightPathsAndContaminatedNavigationAggregates) {
+  Json a={{"tasks",Json::array({{{"id","N1"},{"outcome","succeeded"}},{{"id","N2"},{"outcome","succeeded"}}})},
+    {"plans",Json::array({{{"id","P1"},{"valid",true},{"poses",{{0,0},{1,0}}}},
+                         {{"id","P2"},{"valid",true},{"poses",{{0,0},{.5,.1},{1,0}}}}})},
+    {"paths",Json::array()},{"navigation_metrics",{{"N1/confirmed",{{"rmse",9}}},{"N2/inferred",{{"rmse",9}}}}}};
+  for(int i=1;i<=4;++i) {
+    auto p=path("E"+std::to_string(i),i==4?"N2":"N1",.1*i,1,1);
+    p["interval"]["plan_id"]=(i==1||i==4)?"P1":"P2";a["paths"].push_back(p);
+  }
+  a["overview"]=makeOverview(a);const auto original=a;excludeStraightPaths(a);
+  ASSERT_EQ(a["paths"].size(),2U);EXPECT_EQ(a["paths"][0],original["paths"][1]);
+  EXPECT_EQ(a["paths"][1],original["paths"][2]);ASSERT_EQ(a["plans"].size(),1U);
+  EXPECT_EQ(a["plans"][0]["id"],"P2");ASSERT_EQ(a["tasks"].size(),1U);
+  EXPECT_EQ(a["tasks"][0]["id"],"N1");EXPECT_EQ(a["tasks"][0]["path_filter_applied"],true);
+  EXPECT_TRUE(a["navigation_metrics"].empty());EXPECT_EQ(a["overview"],original["overview"]);
+  const auto once=a;excludeStraightPaths(a);EXPECT_EQ(a,once);
+}

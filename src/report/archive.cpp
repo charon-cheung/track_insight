@@ -78,7 +78,7 @@ Json summary(const Json& a,const std::string& id,const std::string& name,const s
   Json row={{"id",id},{"name",name},{"note",note},{"report","runs/"+id+"/report.html"},
     {"source_sha256",meta.at("input_sha256")},{"start_ns",meta.at("start_ns")},{"end_ns",meta.at("end_ns")},
     {"start_label",meta.at("start_label")},{"end_label",meta.at("end_label")},
-    {"paths",a.at("plans").size()},{"tasks",a.at("tasks").size()},
+    {"paths",a.at("plans").size()-overview.at("excluded_straight_plan_ids").size()},{"tasks",a.at("tasks").size()},
     {"metric_version",a.at("metric_version")},{"overview",overview},{"worst",Json::array()}};
   for(const auto& worst:overview.at("worst_ids"))for(const auto& p:a.at("paths"))if(p.at("interval").at("id")==worst)
     row["worst"].push_back({{"plan_id",p["interval"]["plan_id"]},{"rmse",p["metrics"]["lateral"]["rmse"]}});
