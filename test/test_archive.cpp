@@ -127,3 +127,18 @@ TEST_F(ArchiveTest, StraightPathsDoNotEnterArchiveCountsMeansOrBestWorst) {
   const auto saved=Json::parse(readText(result.report.parent_path()/"analysis.json"));
   EXPECT_EQ(saved["paths"],a["paths"]);EXPECT_EQ(saved["plans"],a["plans"]);
 }
+
+TEST_F(ArchiveTest, ParameterSnapshotsAndComparisonSurviveRerenderWithoutNestedHistory) {
+  auto first=analysis();first["pid_parameters"]={{"schema_version",1},{"values",{{"kp_x",1}}}};
+  const auto one=render(first);ASSERT_EQ(one.code,0);
+  auto second=analysis('b');second["meta"]["start_ns"]="1793006082000000000";
+  second["pid_parameters"]={{"schema_version",1},{"values",{{"kp_x",2},{"kp_y",1}}}};
+  const auto two=render(second);ASSERT_EQ(two.code,0);
+  const auto saved=Json::parse(readText(two.report.parent_path()/"analysis.json"));
+  EXPECT_EQ(saved["pid_parameters"]["comparison"]["values"]["kp_x"],1);
+  EXPECT_EQ(saved["pid_parameters"]["comparison"]["run_id"],one.report.parent_path().filename().string());
+  const auto snapshots=catalog();
+  for(const auto& row:snapshots["runs"])EXPECT_FALSE(row["pid_parameters"].contains("comparison"));
+  first["pid_parameters"]["values"]["kp_x"]=99;render(first,true);render(saved,true);
+  EXPECT_EQ(Json::parse(readText(two.report.parent_path()/"analysis.json"))["pid_parameters"],saved["pid_parameters"]);
+}

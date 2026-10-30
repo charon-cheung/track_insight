@@ -3,13 +3,13 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; worker-src blob:; connect-src 'none'">
 <title>Track Insight · 离线跟踪分析</title><style>__TRACK_STYLE__</style><style>__TRACK_REVIEW_STYLE__</style><style>__TRACK_OVERVIEW_STYLE__</style></head>
 <body><header><div><span class="brand">Track <b>Insight</b></span><span class="tag">OFFLINE ANALYSIS</span></div><span id="runTime"></span></header>
-<div class="shell"><aside id="sidebar"><div class="asideTitle">导航与路径 <span id="pathCount"></span></div><button id="overviewNavigation" class="wide" type="button">跟踪精度总览</button><div id="navigation"></div>
+<div class="shell"><aside id="sidebar"><div class="asideTitle">导航与路径 <span id="pathCount"></span></div><button id="overviewNavigation" class="wide" type="button">本轮测试总览</button><div id="navigation"></div>
 <div class="asideTitle lower">数据说明</div><p id="evidence"></p><div id="quality"></div>
 <button id="downloadMetrics" class="wide">导出评价指标 CSV</button></aside>
 <main><div class="viewToolbar">
 <div class="viewNavigation"><button id="toggleSidebar" aria-controls="sidebar" aria-expanded="true">收起导航</button><button id="previousSelection" disabled>上一项</button><select id="quickSelection" aria-label="选择导航或路径"></select><button id="nextSelection" disabled>下一项</button><button id="deleteSelection" title="仅从综合模式隐藏，报告模式仍可查看" disabled>删除本项</button><label id="blackFavoritePicker" class="favoritePicker" hidden><select id="blackFavoriteSelection" aria-label="选择黑色星标"></select></label></div>
 <div class="viewCenter">__TRACK_ARCHIVE_LINK__<button id="manageReviewRecords" type="button">复盘记录</button></div><div class="viewActions"><label id="favoritePicker" class="favoritePicker" hidden><select id="favoriteSelection" aria-label="选择红色星标"></select></label><div class="modeSwitch" role="group" aria-label="查看模式"><button id="reportMode" class="active" aria-pressed="true">报告模式</button><button id="reviewMode" aria-pressed="false">综合模式</button></div></div></div>
-<section id="reportOverview" hidden aria-label="跟踪精度总览"></section>
+<section id="reportOverview" hidden aria-label="本轮测试总览"></section>
 <section class="titleRow"><div><div class="eyebrow">TRACKING CONTROLLER REVIEW</div><div class="selectionHeading"><div class="selectionIdentity"><h1 id="selectionTitle">轨迹复盘</h1><button id="toggleBlackFavorite" class="caseStar blackStar" type="button" aria-label="加入黑色星标（坏 case）" aria-pressed="false" title="加入黑色星标（坏 case）" disabled><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 2 L15.09 8.26 L22 9.27 L17 14.14 L18.18 21.02 L12 17.77 L5.82 21.02 L7 14.14 L2 9.27 L8.91 8.26 Z"/></svg></button></div><span id="titleEndpoints" hidden></span><button id="toggleFavorite" class="caseStar redStar" type="button" aria-label="加入红色星标（好 case）" aria-pressed="false" title="加入红色星标（好 case）" disabled><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 2 L15.09 8.26 L22 9.27 L17 14.14 L18.18 21.02 L12 17.77 L5.82 21.02 L7 14.14 L2 9.27 L8.91 8.26 Z"/></svg></button></div><p id="windowLabel"></p><p id="reviewWindowLabel"><span id="windowDate"></span><span id="windowClockRange"></span><span id="windowEpochRange"></span><span id="windowDuration"></span></p><p id="taskInfo" hidden></p></div><span class="badge" id="association"></span></section>
 <div id="failureBanner" hidden></div><section class="cards" id="cards"></section>
 <div id="reviewWorkspace"><div id="chartDeck">
@@ -32,5 +32,5 @@
 <div class="eventLayout"><div id="events"></div><pre id="logDetail">选择事件查看证据、日志行号和原始内容。</pre></div></section>
 <footer id="footer"></footer></main></div>
 <dialog id="velocityView" aria-labelledby="velocityTitle"></dialog>
-<script type="application/json" id="plotStyle">__TRACK_PLOT_STYLE__</script><script>__TRACK_PLOTLY__</script><script type="application/json" id="analysis">__TRACK_DATA__</script><script>__TRACK_REVIEW_STATE__</script><script>__TRACK_REVIEW_SCRIPT__</script><script>__TRACK_OVERVIEW_SCRIPT__</script><script>__TRACK_SCRIPT__</script>
+<script type="application/json" id="plotStyle">__TRACK_PLOT_STYLE__</script><script>__TRACK_PLOTLY__</script><script type="application/json" id="analysis">__TRACK_DATA__</script><script>__TRACK_REVIEW_STATE__</script><script>__TRACK_REVIEW_SCRIPT__</script><script>__TRACK_OVERVIEW_SCRIPT__</script><script>__TRACK_PARAMETER_SCRIPT__</script><script>__TRACK_SCRIPT__</script>
 </body></html>

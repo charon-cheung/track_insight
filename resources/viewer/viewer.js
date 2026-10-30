@@ -58,7 +58,6 @@
     } else button(task.id+' · '+task.outcome,time(rel(task.start_ns),false)+' · 无可评价路径',task.id,paths,true);
   }
   const unassigned=A.paths.filter(p=>!p.interval.navigation_id);
-  if(unassigned.length)button('路径发布区间','控制器采用情况未证实','all',unassigned,true);
   for(const p of unassigned)button(p.interval.plan_id,time(p.start,false)+' · '+(p.end-p.start).toFixed(1)+' s',p.interval.id,[p]);
   for(const p of A.plans.filter(p=>!p.valid)){const div=document.createElement('p');div.textContent=p.id+' · 不可评价：'+p.reason;$('navigation').append(div);}
   $('pathCount').textContent=A.plans.length+' P';
@@ -322,7 +321,7 @@
     const navigation=task?.id===key;
     range=navigation?[rel(task.start_ns),rel(task.end_ns)]:paths.length?[Math.min(...paths.map(p=>p.start)),Math.max(...paths.map(p=>p.end))]:[0,rel(A.meta.end_ns)];
     const title=$('selectionTitle');
-    title.dataset.report=key==='empty'?'暂无可显示的导航或路径':key==='all'?'全部路径复盘':navigation?key+' · 导航总览':paths.length===1?(task?task.id+' · ':'')+paths[0].interval.plan_id+' · 轨迹跟踪分析':key+' · 导航总览';
+    title.dataset.report=key==='empty'?'暂无可显示的导航或路径':navigation?key+' · 导航总览':paths.length===1?(task?task.id+' · ':'')+paths[0].interval.plan_id+' · 轨迹跟踪分析':key+' · 导航总览';
     title.dataset.review=!navigation&&paths.length===1?paths[0].interval.plan_id:title.dataset.report;
     title.textContent=title.dataset[document.body.classList.contains('review-mode')?'review':'report'];
     const plan=paths.length===1?A.plans.find(p=>p.id===paths[0].interval.plan_id):null;

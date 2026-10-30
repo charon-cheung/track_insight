@@ -32,35 +32,21 @@
       const section=element('section',undefined,'panel'),heading=element('div',undefined,'panelTitle');
       heading.append(element('h2',title));section.append(heading);return section;
     }
-    function metricDetails(title,ids) {
-      const section=panel(title);
-      if(!ids.length){section.append(element('p','没有可用于横向误差排名的数据。','overviewNote'));return section;}
-      for(const id of ids) {
-        const p=paths.get(id);if(!p)continue;
-        const heading=element('h3',undefined,'overviewCase');heading.append(caseButton(p),
-          document.createTextNode(' · '+p.start_label+' · '+fmt(p.end-p.start,2)+' s'));section.append(heading);
-        const detail=table(['指标','RMSE / 值','MAE','P95','最大值']);
-        for(const [key,m] of Object.entries(p.metrics)) {
-          const row=element('tr');row.title=m.reason||'';
-          for(const value of [api.metricNames[key]||key,fmt(m.value??m.rmse)+' '+m.unit,
-            fmt(m.mae),fmt(m.p95),fmt(m.max)])row.append(element('td',value));
-          detail.body.append(row);
-        }
-        section.append(detail.scroll);
-      }
-      return section;
-    }
-    root.append(element('h1','跟踪精度总览'));
+    root.append(element('h1','本轮测试总览'));
     const ranked=summary?.ranked_cases||0,excluded=summary?.excluded_cases||0;
     root.append(element('p',cases.length+' 个路径 case · 横向精度可评价 '+ranked+' 个 · 排除 failed / replaced '+excluded+' 个 · 排除直线路径 '+(summary?.excluded_straight_case_ids?.length||0)+' 个（最大偏离 ≤ 2 cm）','overviewNote'));
-    root.append(element('p','每个 P 路径执行区间统计一次，不重复计入导航 N 总览；综合模式中隐藏的 case 仍参与本报告。','overviewNote'));
     const all=panel('所有 case 的跟踪精度');
     const listing=table(['Case',...columns.map(c=>c[2])]);
     listing.body.id='overviewCases';
-    const caseRows=[];
+    const caseRows=[],best=new Set(summary?.best_ids||[]),worst=new Set(summary?.worst_ids||[]);
     for(const p of cases) {
       const row=element('tr');row.dataset.case=p.interval.id;
-      const label=element('td');label.append(caseButton(p));row.append(label);
+      const ranks=[];
+      if(best.has(p.interval.id)){row.classList.add('overviewBest');ranks.push('最好');}
+      if(worst.has(p.interval.id)){row.classList.add('overviewWorst');ranks.push('最差');}
+      const label=element('td');label.append(caseButton(p));
+      if(ranks.length)label.append(element('span',ranks.join(' / '),'overviewRank'));
+      row.append(label);
       const values=columns.map(([key,stat])=>fmt(p.metrics[key]?.[stat]));
       for(const value of values)row.append(element('td',value));listing.body.append(row);
       caseRows.push({path:p,row,index:caseRows.length});
@@ -89,7 +75,7 @@
       };
       return {stat,label,header,button};
     });
-    all.append(listing.scroll);root.append(all);
+    all.append(element('p','按未四舍五入的横向 RMSE 标记：天蓝色为最好，红色为最差；相同值并列标记。','overviewNote'),listing.scroll);root.append(all);
     const averages=panel('所有 case 的平均跟踪精度');
     const means=table(['指标','case 平均 RMSE','整体 RMSE（按有效时长合并）','纳入 case 数']);
     means.body.id='overviewAverages';
@@ -101,9 +87,6 @@
     }
     averages.append(means.scroll,element('p','case 平均 RMSE = 各有效 case 的 RMSE 算术平均；整体 RMSE = √[Σ(RMSE² × 有效时长) / Σ有效时长]。缺失项不按 0 计算，不参与对应均值。','overviewNote'));
     root.append(averages);
-    root.append(element('p','以下按未四舍五入的横向误差 RMSE 选出最好和最差 case，越小越好；相同值并列展示。请结合“推定 / 已确认”依据比较。','overviewNote'));
-    const extremes=element('div',undefined,'overviewExtremes');
-    extremes.append(metricDetails('跟踪精度最好',summary?.best_ids||[]),metricDetails('跟踪精度最差',summary?.worst_ids||[]));root.append(extremes);
     root.append(element('p','速度指标均为反馈 − 指令的残差；姿态误差缺少已验证目标朝向时不可用。定位轨迹不是独立真值。','overviewNote'));
     function show(visible) {
       if(visible&&$('play').textContent==='暂停')$('play').click();

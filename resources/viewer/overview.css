@@ -13,10 +13,15 @@
 #reportOverview td:last-child{color:inherit}
 #reportOverview .caseLink{border:0;background:none;color:var(--blue);font-weight:600;padding:0;text-decoration:underline;text-underline-offset:3px}
 #reportOverview .caseLink:hover{color:#174b90}
-.overviewExtremes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
-.overviewExtremes>.panel{min-width:0}
-.overviewCase{font-size:12px;font-weight:400;color:var(--muted);padding:0 16px;margin:13px 0}
-@media(max-width:1200px){.overviewExtremes{grid-template-columns:minmax(0,1fr)}}
 
 #reportOverview .overviewSort{border:0;background:none;padding:0;color:inherit;font:inherit;white-space:nowrap}
 #reportOverview .overviewSort:hover,#reportOverview th[aria-sort="ascending"] .overviewSort,#reportOverview th[aria-sort="descending"] .overviewSort{color:var(--blue)}
+
+#overviewCases tr.overviewBest{background:#87CEEB}
+#overviewCases tr.overviewWorst{background:#FF9999}
+#overviewCases tr.overviewBest.overviewWorst{background:linear-gradient(90deg,#87CEEB 50%,#FF9999 50%)}
+#overviewCases .overviewRank{margin-left:10px;font-size:13px;font-weight:600;color:#23304a}
+
+#pidParameters td{white-space:normal;overflow-wrap:anywhere}
+#pidParameters td:first-child{width:42%;font-family:monospace}
+#pidParameterRows tr.parameterChanged{background:#e0e0e0}

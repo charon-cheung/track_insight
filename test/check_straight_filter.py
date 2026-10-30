@@ -57,7 +57,7 @@ async def main():
                 excluded=set(a['overview']['excluded_straight_case_ids'])
                 assert not excluded.intersection(p['id'] for p in a['paths'])
                 identity=json.dumps([a['meta'][k] for k in ['input_sha256','start_ns','end_ns']],separators=(',',':'),ensure_ascii=False)
-                saved={'red':list(excluded)+([a['paths'][0]['id']] if a['paths'] else []),'black':[]}
+                saved={'red':['all']+list(excluded)+([a['paths'][0]['id']] if a['paths'] else []),'black':[]}
                 await js('localStorage.setItem('+json.dumps('trackInsight:stars:v2:'+identity)+','+json.dumps(json.dumps(saved))+')')
                 await js('window.reloadingStraightTest=true')
                 await call('Page.reload',{'ignoreCache':True})
@@ -68,7 +68,10 @@ async def main():
                     await js("document.getElementById("+json.dumps(mode)+").click()")
                     await asyncio.sleep(.3)
                     picks=await js("['quickSelection','favoriteSelection','blackFavoriteSelection'].map(id=>[...document.getElementById(id).options].map(o=>o.value))")
-                    for options in picks:assert not excluded.intersection(options),options
+                    for options in picks:
+                        assert not excluded.intersection(options),options
+                        assert 'all' not in options,options
+                    assert await js("!document.querySelector('#navigation button[data-key=all]')")
                     assert not set(args.excluded_plans).intersection(await js("[...document.getElementById('quickSelection').options].map(o=>o.textContent)"))
                     if not a['paths']:
                         assert not picks[0]

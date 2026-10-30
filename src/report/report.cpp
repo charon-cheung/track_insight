@@ -121,6 +121,7 @@ int renderReport(Json analysis,const fs::path& requested,const fs::path& resourc
     replaceAll(html,"__TRACK_PLOTLY__",readText(resources/"viewer"/"plotly.min.js"));
     replaceAll(html,"__TRACK_OVERVIEW_STYLE__",readText(resources/"viewer"/"overview.css"));
     replaceAll(html,"__TRACK_OVERVIEW_SCRIPT__",readText(resources/"viewer"/"overview.js"));
+    replaceAll(html,"__TRACK_PARAMETER_SCRIPT__",readText(resources/"viewer"/"parameters.js"));
     replaceAll(html,"__TRACK_SCRIPT__",readText(resources/"viewer"/"viewer.js"));
     replaceAll(html,"__TRACK_REVIEW_STYLE__",readText(resources/"viewer"/"review.css"));
     replaceAll(html,"__TRACK_REVIEW_SCRIPT__",readText(resources/"viewer"/"review.js"));

@@ -16,7 +16,7 @@ const cases=[
  {id:'E5',v:[0,0,0]}, {id:'E6',v:[]}];
 window.trackInsight={metricNames:{},analysis:{
  paths:cases.map(c=>({interval:{id:c.id,plan_id:c.id},metrics:c.v.length?{lateral:{rmse:c.v[0],p95:c.v[1],max:c.v[2]}}:{}})),
- overview:{case_ids:cases.map(c=>c.id),best_ids:[],worst_ids:[],averages:{},ranked_cases:4}}};
+ overview:{case_ids:cases.map(c=>c.id),best_ids:['E5'],worst_ids:['E1'],averages:{},ranked_cases:4}}};
 let navigated=null;
 for(const c of cases){const b=document.createElement('button');b.dataset.key=c.id;b.onclick=()=>{navigated=c.id;};document.getElementById('navigation').append(b);}
 '''
@@ -24,9 +24,17 @@ CHECKS = '''
 const assert=(value,message)=>{if(!value)throw Error(message);};
 const order=()=>[...document.querySelectorAll('#overviewCases tr[data-case]')].map(r=>r.dataset.case).join(',');
 const original=JSON.stringify(trackInsight.analysis);
+const checkRanks=()=>{
+ const row=id=>document.querySelector('#overviewCases tr[data-case="'+id+'"]');
+ assert(row('E5').textContent.includes('最好'),'Best case lacks visible label');
+ assert(row('E1').textContent.includes('最差'),'Worst case lacks visible label');
+ assert(getComputedStyle(row('E5')).backgroundColor==='rgb(135, 206, 235)','Best row must be sky blue');
+ assert(getComputedStyle(row('E1')).backgroundColor==='rgb(255, 153, 153)','Worst row must be red');
+ assert(![...document.querySelectorAll('#reportOverview h2')].some(h=>['跟踪精度最好','跟踪精度最差'].includes(h.textContent)),'Old detail panels remain');
+};
 document.dispatchEvent(new Event('trackinsight:ready'));
 const table=document.getElementById('overviewCases').closest('table'),headers=[...table.querySelectorAll('thead th')];
-assert(order()==='E1,E2,E3,E4,E5,E6','Initial order changed');
+assert(order()==='E1,E2,E3,E4,E5,E6','Initial order changed');checkRanks();
 assert(['E1','E2','E4'].every(id=>document.querySelector('tr[data-case="'+id+'"]').cells[1].textContent==='0.020'),'Rounded-value fixture changed');
 assert(table.querySelectorAll('thead button').length===3,'Expected exactly three sortable headers');
 const summary=[...document.querySelectorAll('#reportOverview > section')].slice(1).map(s=>s.textContent).join('');
@@ -37,7 +45,7 @@ for(const [column,ascending,descending] of [
  const button=headers[column].querySelector('button');assert(button.type==='button','Sort control is not a button');
  button.focus();assert(document.activeElement===button,'Sort header is not focusable');
  for(const [direction,expected] of [['ascending',ascending],['descending',descending]]) {
-  button.click();assert(order()===expected,'Wrong '+direction+' order in column '+column+': '+order());
+  button.click();checkRanks();assert(order()===expected,'Wrong '+direction+' order in column '+column+': '+order());
   assert(headers[column].getAttribute('aria-sort')===direction,'Missing accessible sort direction');
   assert(button.textContent.includes(direction==='ascending'?'↑':'↓'),'Missing sort arrow');
   assert(headers.filter(h=>['ascending','descending'].includes(h.getAttribute('aria-sort'))).length===1,'Multiple active columns');
@@ -53,7 +61,7 @@ const saved=order();document.getElementById('overviewNavigation').click();assert
 def check(source, setup, checks):
     with tempfile.TemporaryDirectory(prefix='track_sort_', ignore_cleanup_errors=True) as tmp:
         page = Path(tmp) / 'check.html'
-        page.write_text('<meta charset="utf-8">'+DOM+'<script>'+setup+'</script><script>'+source+'</script><script>try{'+checks+
+        page.write_text('<meta charset="utf-8"><style>'+(ROOT/'resources/viewer/viewer.css').read_text()+(ROOT/'resources/viewer/overview.css').read_text()+'</style>'+DOM+'<script>'+setup+'</script><script>'+source+'</script><script>try{'+checks+
             ';document.getElementById("result").textContent="PASS";}catch(e){document.getElementById("result").textContent="FAIL: "+e.message;}</script>')
         run = subprocess.run(['/usr/bin/google-chrome','--headless','--disable-gpu','--disable-background-networking',
             '--no-first-run','--user-data-dir='+str(Path(tmp)/'profile'),'--dump-dom',page.as_uri()],capture_output=True,text=True,timeout=30)
@@ -71,4 +79,16 @@ if __name__ == '__main__':
       for(const button of body.closest('table').querySelectorAll('thead button')){button.click();button.click();}
       if(body.rows.length!==1||!body.textContent.includes('没有符合条件'))throw Error('Empty-table message was lost');
     ''')
+    check(source, SETUP+"trackInsight.analysis.overview.case_ids=['E1','E2','E4'];trackInsight.analysis.overview.best_ids=['E2','E4'];", """
+      document.dispatchEvent(new Event('trackinsight:ready'));
+      for(const id of ['E2','E4']){
+        const row=document.querySelector('#overviewCases tr[data-case="'+id+'"]');
+        if(!row.textContent.includes('最好')||getComputedStyle(row).backgroundColor!=='rgb(135, 206, 235)')throw Error('Tied best case not marked');
+      }
+    """)
+    check(source, SETUP+"trackInsight.analysis.overview.case_ids=['E1'];trackInsight.analysis.overview.best_ids=['E1'];", """
+      document.dispatchEvent(new Event('trackinsight:ready'));
+      const row=document.querySelector('#overviewCases tr[data-case]');
+      if(!row.textContent.includes('最好 / 最差')||!getComputedStyle(row).backgroundImage.includes('linear-gradient'))throw Error('Single ranked case must show both ranks');
+    """)
     print('PASS: numeric ascending/descending; stable ties; zero/missing/invalid; indicators; unchanged statistics; case links; empty table')

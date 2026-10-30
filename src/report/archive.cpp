@@ -1,4 +1,5 @@
 #include "track_insight/archive.hpp"
+#include "track_insight/parameter_snapshot.hpp"
 #include <algorithm>
 #include <array>
 #include <regex>
@@ -82,6 +83,7 @@ Json summary(const Json& a,const std::string& id,const std::string& name,const s
     {"metric_version",a.at("metric_version")},{"overview",overview},{"worst",Json::array()}};
   for(const auto& worst:overview.at("worst_ids"))for(const auto& p:a.at("paths"))if(p.at("interval").at("id")==worst)
     row["worst"].push_back({{"plan_id",p["interval"]["plan_id"]},{"rmse",p["metrics"]["lateral"]["rmse"]}});
+  if(a.contains("pid_parameters")) {row["pid_parameters"]=a["pid_parameters"];row["pid_parameters"].erase("comparison");}
   return row;
 }
 std::string homepage(const Json& catalog,const fs::path& resources) {
@@ -115,6 +117,7 @@ ArchiveResult renderArchive(Json analysis,const fs::path& requested,const fs::pa
   auto input=fs::path(analysis.at("meta").at("input_path").get<std::string>()).lexically_normal();
   if(input.filename().empty())input=input.parent_path();
   const auto default_name=input.filename().empty()?id:input.filename().string();
+  attachPidParameterBaseline(analysis,catalog["runs"]);
   auto row=summary(analysis,id,name.value_or(exists?found->at("name").get<std::string>():default_name),
     note.value_or(exists?found->at("note").get<std::string>():""));
   // Validate the published destination before staging, including user-added files.
