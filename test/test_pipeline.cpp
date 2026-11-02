@@ -96,6 +96,26 @@ TEST(Pipeline, McapZipAndKnownMetricsMatch) {
   EXPECT_NEAR(*p.metrics.at("vx_residual").rmse,.02,1e-9);
   ASSERT_TRUE(p.metrics.at("goal_position_error").value);EXPECT_NEAR(*p.metrics.at("goal_position_error").value,std::hypot(.8,.1),1e-9);
 }
+TEST(Pipeline, RuntimePidParametersComeFromMatchingLogAndSurviveSerialization) {
+  Fixture f;const auto existing=readText(f.log);
+  writeText(f.log,
+    "[controller_server] [1792655908.100000000] PID_LOG parameter_snapshot_begin controller=PidTrackingController count=3\n"
+    "[controller_server] [1792655908.100100000] PID_LOG parameter name=PidTrackingController.kp_x type=double value=0.75\n"
+    "[controller_server] [1792655908.100200000] PID_LOG parameter name=PidTrackingController.base_frame type=string value=\"rbs_base_link\"\n"
+    "[controller_server] [1792655908.100300000] PID_LOG parameter name=controller_frequency type=double value=15\n"
+    "[controller_server] [1792655908.100400000] PID_LOG parameter_snapshot_end controller=PidTrackingController count=3\n"+existing);
+  Config c;const auto data=readBag(f.bag,std::filesystem::relative(f.log),c);ASSERT_TRUE(data.log_compatible);
+  const auto a=makeAnalysis(data,evaluate(data,c),c,captureDisplayClock(data.start,data.end,true));
+  ASSERT_EQ(a["pid_parameters"]["status"],"available");
+  EXPECT_EQ(a["pid_parameters"]["values"]["PidTrackingController.kp_x"],.75);
+  EXPECT_EQ(std::filesystem::path(a["pid_parameters"]["source_path"].get<std::string>()).lexically_normal(),f.log);
+  EXPECT_EQ(a["pid_parameters"]["values"].size(),3U);
+  writeText(f.log,existing);
+  const auto legacy=readBag(f.bag,f.log,c);
+  const auto missing=makeAnalysis(legacy,evaluate(legacy,c),c,captureDisplayClock(legacy.start,legacy.end,true));
+  EXPECT_EQ(missing["pid_parameters"]["status"],"unknown");
+  EXPECT_FALSE(missing["pid_parameters"].contains("values"));
+}
 TEST(Pipeline, TrackingRawVelocityPreservesTimeGapsAndExistingMetrics) {
   for(bool stamped:{false,true}) {
     Fixture f(true,stamped,false,true);Config c;const auto data=readBag(f.bag,f.log,c);

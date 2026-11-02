@@ -11,12 +11,14 @@ window.createReviewRecords=(api,onChange)=>{
       return new Set(Array.isArray(saved)?saved.filter(v=>typeof v==='string'&&entries.has(v)):[]);
     } catch(error){storageUnavailable=error.name!=='SyntaxError';return new Set();}
   }
-  const hidden=load(keys.hidden),favorites={red:new Set(),black:new Set()};
+  const hidden=load(keys.hidden),favorites={red:new Set(),black:new Set()},automaticWorst=new Set();
   try {
     const saved=localStorage.getItem(keys.stars);
     if(saved===null)favorites.black=load(keys.favorites);
     else {
       const record=JSON.parse(saved);
+      if(Array.isArray(record?.automaticWorst))for(const key of record.automaticWorst)
+        if(typeof key==='string'&&entries.has(key))automaticWorst.add(key);
       for(const color of ['red','black'])if(Array.isArray(record?.[color]))
         for(const key of record[color])if(typeof key==='string'&&entries.has(key))favorites[color].add(key);
       for(const key of favorites.black)favorites.red.delete(key);
@@ -55,11 +57,18 @@ window.createReviewRecords=(api,onChange)=>{
   }
   function save() {
     try {
-      localStorage.setItem(keys.stars,JSON.stringify({red:[...favorites.red],black:[...favorites.black]}));
+      localStorage.setItem(keys.stars,JSON.stringify({red:[...favorites.red],black:[...favorites.black],automaticWorst:[...automaticWorst]}));
       localStorage.setItem(keys.hidden,JSON.stringify([...hidden]));
       localStorage.setItem(keys.issues,JSON.stringify(Object.fromEntries(issues)));storageUnavailable=false;
     } catch {storageUnavailable=true;}
   }
+  let addedWorst=false;
+  for(const key of api.analysis.overview?.worst_ids||[]) {
+    if(!entries.has(key)||automaticWorst.has(key))continue;
+    automaticWorst.add(key);addedWorst=true;
+    if(!favorites.red.has(key))favorites.black.add(key);
+  }
+  if(addedWorst)save();
   issueText.oninput=()=>{
     const key=issueText.dataset.case;
     if(key!==api.selected||!entries.has(key)||!favorites.black.has(key))return;
@@ -148,10 +157,6 @@ window.createReviewRecords=(api,onChange)=>{
       changed('导入完成，已合并星标、隐藏项与问题记录。');
     } catch(error){message('导入失败：'+error.message);}
     finally {input.value='';}
-  };
-  $('manageReviewRecords').onclick=()=>{
-    if($('play').textContent==='暂停')$('play').click();
-    refresh();message('');dialog.showModal();
   };
   document.addEventListener('trackinsight:cursor',()=>{if(lastSelected!==api.selected)refresh();});
   return {hidden,hide,refresh};

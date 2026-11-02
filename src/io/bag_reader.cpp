@@ -144,7 +144,7 @@ RunData readBag(const std::filesystem::path& input,const std::filesystem::path& 
   if(log.empty())data.diagnostics.push_back({"log_missing","No matching nav2.log supplied; execution windows are inferred","",0});
   else if(!std::filesystem::exists(log))data.diagnostics.push_back({"log_missing","Requested nav2.log is unavailable",log.string(),0});
   else {
-    data.log_path=std::filesystem::absolute(log).string();data.log_hash=hashInput(log);auto log_events=parseLog(log);
+    data.log_path=std::filesystem::absolute(log).string();data.log_hash=hashInput(log);auto log_events=parseLog(data.log_path);
     std::size_t overlap=0,anchors=0;
     for(const auto& e:log_events) {
       if(e.ns<data.start||e.ns>data.end)continue;

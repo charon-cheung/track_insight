@@ -1,7 +1,7 @@
 /* The report and review modes reuse the same three plots and playback controls. */
 .viewToolbar{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:start;gap:24px;margin-bottom:16px}
 .viewNavigation,.modeSwitch{display:flex;align-items:center;gap:7px}.viewNavigation select{max-width:240px}
-#archiveHome{display:inline-flex;align-items:center;justify-content:center;min-height:33px;padding:7px 10px;background:white;border:1px solid #d5deeb;border-radius:4px;color:#445873;font-size:12px;white-space:nowrap;text-decoration:none}
+#archiveHome{display:inline-flex;align-items:center;justify-content:center;min-height:33px;padding:7px 10px;background:white;border:1px solid #d5deeb;border-radius:4px;color:#445873;font-size:18px;white-space:nowrap;text-decoration:none}
 #archiveHome:hover{background:#edf4fe;border-color:#adc9ed}
 #archiveHome:focus-visible{outline:2px solid var(--blue)}
 .modeSwitch button{min-width:76px}.sidebar-collapsed .shell,.review-mode .shell{grid-template-columns:minmax(0,1fr)}
@@ -111,6 +111,6 @@ body:not(.review-mode) .viewToolbar{display:flex;flex-wrap:wrap;gap:18px;align-i
 body:not(.review-mode) .viewNavigationGroup{order:0}
 body:not(.review-mode) .viewCenter{display:contents}
 body:not(.review-mode) #archiveHome{order:1}
-body:not(.review-mode) #manageReviewRecords{order:2;margin-left:auto}
-body:not(.review-mode) .viewActions{order:3;margin-left:0;gap:18px}
-body:not(.review-mode) :is(#toggleSidebar,#archiveHome,#manageReviewRecords,#reportMode,#reviewMode){font-size:19.2px;padding:10px 16px;min-height:46px;white-space:nowrap}
+body:not(.review-mode) .viewActions{order:3;margin-left:auto;gap:18px}
+body:not(.review-mode) :is(#toggleSidebar,#archiveHome,#reportMode,#reviewMode){font-size:19.2px;padding:10px 16px;min-height:46px;white-space:nowrap}
+body:not(.review-mode) #archiveHome{font-size:28.8px}

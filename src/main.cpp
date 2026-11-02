@@ -21,7 +21,7 @@ void usage() {
     "  track_insight analyze --bag INPUT [--log nav2.log] --archive DIR [--name NAME] [--note TEXT] [--config FILE] [--replace]\n"
     "  track_insight render --analysis analysis.json --archive DIR [--name NAME] [--note TEXT] [--replace]\n"
     "Archive: append each run; --replace updates only the matching bag. --output and --archive are exclusive.\n"
-    "PID parameters: analyze snapshots the installed PID YAML; --pid-config FILE explicitly captures a file for analyze/render.\n"
+    "PID parameters: runtime snapshots from the matched navigation log only; missing evidence is reported as unknown.\n"
     "Input: one bag ZIP, bag directory, or MCAP. No ROS node or bag playback.\n"
     "Exit: 0 generated; 2 partial; 1 fatal. Inferred evidence is labeled separately.\n";
 }
@@ -34,9 +34,9 @@ int main(int argc,char** argv) {
     const std::string command=argv[1];
     if(command!="inspect"&&command!="analyze"&&command!="render")throw std::invalid_argument("unknown command: "+command);
     std::map<std::string,std::string> args;
-    const std::set<std::string> allowed=command=="render"?std::set<std::string>{"--analysis","--output","--replace","--archive","--name","--note","--pid-config"}:
+    const std::set<std::string> allowed=command=="render"?std::set<std::string>{"--analysis","--output","--replace","--archive","--name","--note"}:
       command=="inspect"?std::set<std::string>{"--bag","--log","--config"}:
-      std::set<std::string>{"--bag","--log","--config","--output","--replace","--archive","--name","--note","--pid-config"};
+      std::set<std::string>{"--bag","--log","--config","--output","--replace","--archive","--name","--note"};
     for(int i=2;i<argc;++i) {
       const std::string key=argv[i];if(!allowed.count(key)||args.count(key))throw std::invalid_argument("invalid or repeated option: "+key);
       if(key=="--replace"){args[key]="true";continue;}
@@ -50,19 +50,8 @@ int main(int argc,char** argv) {
       require(args.count("--archive")?"--archive":"--output");
     }
     const auto resources=std::filesystem::path(ament_index_cpp::get_package_share_directory("track_insight"))/"resources";
-    std::optional<Json> pid_parameters;
-    if(command=="analyze"||args.count("--pid-config")) {
-      std::filesystem::path pid_file;
-      if(args.count("--pid-config"))pid_file=require("--pid-config");
-      else {
-        try{pid_file=std::filesystem::path(ament_index_cpp::get_package_share_directory("pid_tracking_controller"))/"param/jazzy/pid_tracking_controller.yaml";}
-        catch(const ament_index_cpp::PackageNotFoundError&){}
-      }
-      if(!pid_file.empty()&&(args.count("--pid-config")||std::filesystem::exists(pid_file)))pid_parameters=readPidParameters(pid_file);
-      else std::cerr<<"PID parameter snapshot unavailable; use --pid-config FILE to supply the configuration.\n";
-    }
     auto generate=[&](Json analysis,const std::function<void(double)>& progress={}) {
-      if(pid_parameters)analysis["pid_parameters"]=*pid_parameters;
+      updatePidParameters(analysis);
       if(args.count("--archive"))return renderArchive(std::move(analysis),args.at("--archive"),resources,args.count("--replace"),
         args.count("--name")?std::optional<std::string>(args.at("--name")):std::nullopt,
         args.count("--note")?std::optional<std::string>(args.at("--note")):std::nullopt,progress);

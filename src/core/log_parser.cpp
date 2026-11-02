@@ -29,6 +29,8 @@ std::vector<LogEvent> parseLog(const std::filesystem::path& path) {
     else if(navigator&&(line.find("Goal failed")!=std::string::npos||line.find("Navigation failed")!=std::string::npos||line.find("Aborting")!=std::string::npos))event.kind="navigation_failed";
     else if(line.find("RBS lattice current request")!=std::string::npos)event.kind="planning_request";
     else if(line.find("lattice_summary")!=std::string::npos)event.kind="planning_summary";
+    else if(line.find("controller_server")!=std::string::npos&&
+      (line.find("Creating controller server")!=std::string::npos||line.find("Configuring controller interface")!=std::string::npos))event.kind="controller_start";
     else if(line.find("PID_LOG path_handoff_rejected")!=std::string::npos)event.kind="handoff_rejected";
     else if(line.find("PID_LOG path_handoff")!=std::string::npos)event.kind="handoff";
     else if(line.find("PID_LOG tracking_state")!=std::string::npos)event.kind="tracking_state";

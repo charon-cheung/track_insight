@@ -1,3 +1,4 @@
+#include "track_insight/parameter_snapshot.hpp"
 #include "track_insight/report.hpp"
 #include <fstream>
 #include <sstream>
@@ -147,6 +148,6 @@ Json makeAnalysis(const RunData& d,const Evaluation& e,const Config& c,const Dis
   for(const auto& p:e.paths)if(p.interval.identity=="confirmed"&&p.interval.start_quality=="confirmed"&&p.interval.end_quality=="confirmed")
     a["capabilities"]["confirmed_intervals"]=true;
   a["overview"]=makeOverview(a);
-  return a;
+  updatePidParameters(a);return a;
 }
 }

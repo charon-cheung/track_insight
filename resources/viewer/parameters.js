@@ -1,18 +1,18 @@
-// Captured configuration is report evidence, not a live read of the controller's parameters.
+// Runtime parameters come only from the navigation log saved with this report.
 'use strict';
 document.addEventListener('trackinsight:ready',()=>{
   const snapshot=window.trackInsight.analysis.pid_parameters,root=document.getElementById('reportOverview');
   const node=(tag,text,className)=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(className)e.className=className;return e;};
   const panel=node('section',undefined,'panel');panel.id='pidParameters';
   const heading=node('div',undefined,'panelTitle');heading.append(node('h2','本轮 PID 参数'));panel.append(heading);root.append(panel);
-  if(!snapshot?.values||snapshot.schema_version!==1) {
-    panel.append(node('p','本轮未保存 PID 参数快照。','overviewNote'));return;
+  if(!snapshot?.values||snapshot.schema_version!==2||snapshot.status!=='available'||snapshot.source_kind!=='navigation_log') {
+    panel.append(node('p','测试时参数未知。'+(snapshot?.reason||'对应导航日志中没有可匹配的完整运行参数快照。'),'overviewNote'));return;
   }
-  panel.append(node('p','配置文件：'+snapshot.source_path+' · 快照时间：'+snapshot.captured_at_label,'overviewNote'));
-  panel.append(node('p','生成报告时读取的配置快照，未核验机器人运行时参数。重新渲染沿用已保存快照。','overviewNote'));
+  panel.append(node('p','导航日志：'+snapshot.source_path+' · 快照时间：'+snapshot.captured_at_label,'overviewNote'));
+  panel.append(node('p','来自控制器运行参数快照，共 '+Object.keys(snapshot.values).length+' 项；按测试时间匹配启动记录。','overviewNote'));
   const comparison=snapshot.comparison,hasBaseline=comparison?.status==='available'&&comparison.values;
   panel.append(node('p',hasBaseline?'比较基准：上一轮 '+comparison.run_name+'。灰色行表示修改、新增或删除的参数。':
-    comparison?.status==='previous_snapshot_missing'?'上一轮 '+comparison.run_name+' 未保存参数快照，无可用比较基准。':
+    comparison?.status==='previous_snapshot_missing'?'上一轮 '+comparison.run_name+' 测试时参数未知，无可用运行参数比较基准。':
     comparison?.status==='no_previous_round'?'首轮参数快照，无上一轮参数基准。':'未关联上一轮测试报告，无可用比较基准。','overviewNote'));
   const current=snapshot.values,previous=hasBaseline?comparison.values:{};
   const hidden=new Set(['controller_frequency','failure_tolerance','publish_zero_velocity','PidTrackingController.plugin']);

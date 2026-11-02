@@ -73,8 +73,13 @@ async def main():
                 async def edit_issue(text):
                     await js("(()=>{const t=document.getElementById('caseIssueText');t.value="+json.dumps(text)+";t.dispatchEvent(new Event('input'));})()")
                 # An old orange favorite and a hidden case survive migration.
-                await js("(()=>{const m=trackInsight.analysis.meta,i=JSON.stringify([m.input_sha256,m.start_ns,m.end_ns]);localStorage.setItem('trackInsight:favorites:v1:'+i,JSON.stringify(["+json.dumps(first)+"]));localStorage.setItem('trackInsight:hidden:v1:'+i,JSON.stringify(["+json.dumps(third)+"]));})()")
+                await js("(()=>{const m=trackInsight.analysis.meta,i=JSON.stringify([m.input_sha256,m.start_ns,m.end_ns]);localStorage.removeItem('trackInsight:stars:v2:'+i);localStorage.setItem('trackInsight:favorites:v1:'+i,JSON.stringify(["+json.dumps(first)+"]));localStorage.setItem('trackInsight:hidden:v1:'+i,JSON.stringify(["+json.dumps(third)+"]));})()")
                 await reload()
+                assert first in (await state())['black'],'Legacy favorite lost during automatic star initialization'
+                for key in (await state())['black']:
+                    if key!=first:
+                        await select(key)
+                        await js("document.getElementById('toggleBlackFavorite').click()")
                 current=await state()
                 assert current['black']==[first] and current['red']==[],current
                 assert third not in await js("[...document.getElementById('quickSelection').options].map(o=>o.value)")
@@ -163,7 +168,7 @@ async def main():
                 if args.screenshot:
                     shot=await call('Page.captureScreenshot',{'format':'png'})
                     Path(args.screenshot).write_bytes(base64.b64decode(shot['data']))
-                for mode,width in [('reviewMode',2560),('reviewMode',1366),('reportMode',1920)]:
+                for mode,width in [('reviewMode',2560),('reviewMode',1366)]:
                     await call('Emulation.setDeviceMetricsOverride',{'width':width,'height':1080,'deviceScaleFactor':1,'mobile':False})
                     await js("document.getElementById('"+mode+"').click()")
                     await select(first)

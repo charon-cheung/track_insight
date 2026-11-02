@@ -129,10 +129,10 @@ TEST_F(ArchiveTest, StraightPathsDoNotEnterArchiveCountsMeansOrBestWorst) {
 }
 
 TEST_F(ArchiveTest, ParameterSnapshotsAndComparisonSurviveRerenderWithoutNestedHistory) {
-  auto first=analysis();first["pid_parameters"]={{"schema_version",1},{"values",{{"kp_x",1}}}};
+  auto first=analysis();first["pid_parameters"]={{"schema_version",2},{"source_kind","navigation_log"},{"status","available"},{"values",{{"kp_x",1}}}};
   const auto one=render(first);ASSERT_EQ(one.code,0);
   auto second=analysis('b');second["meta"]["start_ns"]="1793006082000000000";
-  second["pid_parameters"]={{"schema_version",1},{"values",{{"kp_x",2},{"kp_y",1}}}};
+  second["pid_parameters"]={{"schema_version",2},{"source_kind","navigation_log"},{"status","available"},{"values",{{"kp_x",2},{"kp_y",1}}}};
   const auto two=render(second);ASSERT_EQ(two.code,0);
   const auto saved=Json::parse(readText(two.report.parent_path()/"analysis.json"));
   EXPECT_EQ(saved["pid_parameters"]["comparison"]["values"]["kp_x"],1);
