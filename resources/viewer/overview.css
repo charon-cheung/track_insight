@@ -4,8 +4,9 @@
 .review-mode #overviewNavigation{display:none}
 .report-overview .titleRow,.report-overview #cards,.report-overview #reviewWorkspace,.report-overview .reportOnly{display:none}
 .report-overview #previousSelection,.report-overview #quickSelection,.report-overview #nextSelection,.report-overview #deleteSelection,.report-overview #favoritePicker,.report-overview #blackFavoritePicker{display:none}
-#reportOverview h1{margin:6px 0 10px;font-size:25px}
+#reportOverview h1{margin:6px 0 10px;font-size:37.5px}
 .overviewNote{color:var(--muted);font-size:12px;line-height:1.8;margin:7px 0 15px}
+#reportOverview .overviewIntro{font-size:19.2px;overflow-wrap:anywhere}
 #reportOverview .panel{margin:16px 0}
 #reportOverview .panelTitle{padding:13px 16px}
 #reportOverview .panel>.overviewNote{padding:0 16px;margin:12px 0}
@@ -25,3 +26,5 @@
 #pidParameters td{white-space:normal;overflow-wrap:anywhere}
 #pidParameters td:first-child{width:42%;font-family:monospace}
 #pidParameterRows tr.parameterChanged{background:#e0e0e0}
+
+#reportOverview .overviewSources{display:flex;flex-wrap:wrap;column-gap:2em;row-gap:0}

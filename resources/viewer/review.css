@@ -1,5 +1,5 @@
 /* The report and review modes reuse the same three plots and playback controls. */
-.viewToolbar{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:24px;margin-bottom:16px}
+.viewToolbar{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:start;gap:24px;margin-bottom:16px}
 .viewNavigation,.modeSwitch{display:flex;align-items:center;gap:7px}.viewNavigation select{max-width:240px}
 #archiveHome{display:inline-flex;align-items:center;justify-content:center;min-height:33px;padding:7px 10px;background:white;border:1px solid #d5deeb;border-radius:4px;color:#445873;font-size:12px;white-space:nowrap;text-decoration:none}
 #archiveHome:hover{background:#edf4fe;border-color:#adc9ed}
@@ -98,3 +98,19 @@ body.velocity-maximized{overflow:hidden}
 .recordsHeading,.hiddenRecord{justify-content:space-between}.recordsActions{flex-wrap:wrap}
 .hiddenRecord{padding:8px 0;border-bottom:1px solid var(--border)}
 #reviewRecordsStatus{min-height:22px}#manageReviewRecords{white-space:nowrap}
+
+.viewNavigationGroup{width:max-content;max-width:100%;min-width:0}
+#caseIssuePanel{margin-top:8px;width:100%}
+#caseIssuePanel[hidden],.report-overview #caseIssuePanel{display:none}
+.caseIssueHeading{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:5px;font-size:12px;color:var(--muted)}
+#caseIssueText{display:block;box-sizing:border-box;width:100%;min-height:84px;max-height:180px;resize:vertical;padding:10px 12px;border:1px solid #d5deeb;border-radius:6px;background:white;color:var(--ink,#23304a);font-family:inherit;font-size:14px;line-height:1.6}
+#caseIssueText:focus{outline:2px solid var(--blue);outline-offset:1px}
+#caseIssueStatus.saveFailed{color:#b23c29}
+
+body:not(.review-mode) .viewToolbar{display:flex;flex-wrap:wrap;gap:18px;align-items:start}
+body:not(.review-mode) .viewNavigationGroup{order:0}
+body:not(.review-mode) .viewCenter{display:contents}
+body:not(.review-mode) #archiveHome{order:1}
+body:not(.review-mode) #manageReviewRecords{order:2;margin-left:auto}
+body:not(.review-mode) .viewActions{order:3;margin-left:0;gap:18px}
+body:not(.review-mode) :is(#toggleSidebar,#archiveHome,#manageReviewRecords,#reportMode,#reviewMode){font-size:19.2px;padding:10px 16px;min-height:46px;white-space:nowrap}

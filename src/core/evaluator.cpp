@@ -86,7 +86,8 @@ void addFindings(PathResult& path,const Cells& values,const Config& config) {
 Evaluation evaluate(const RunData& data,const Config& config) {
   Evaluation result;result.tasks=navigationTasks(data);
   std::map<std::string,Cells> navigation;
-  for(const auto& interval:executionIntervals(data,result.tasks)) {
+  for(const auto& publication:executionIntervals(data,result.tasks)) {
+    const auto interval=motionWindow(data,publication,config);
     auto plan=std::find_if(data.plans.begin(),data.plans.end(),[&](const auto& p){return p.id==interval.plan_id;});
     if(plan==data.plans.end())continue;
     PathResult path;path.interval=interval;path.tracking=matchTracking(*plan,data,interval,config);

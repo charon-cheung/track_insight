@@ -147,6 +147,7 @@ Metric summarize(const std::vector<WeightedSample>& samples, const Interval& int
 std::vector<LogEvent> parseLog(const std::filesystem::path& path);
 std::vector<Task> navigationTasks(const RunData& data);
 std::vector<Interval> executionIntervals(const RunData& data, const std::vector<Task>& tasks);
+Interval motionWindow(const RunData& data, Interval interval, const Config& config);
 std::vector<TrackingSample> matchTracking(const Plan& plan, const RunData& data,
   const Interval& interval, const Config& config);
 std::vector<Velocity> causalCommands(const std::vector<Velocity>& input);

@@ -250,6 +250,40 @@ TEST(MotionWindow, ActionLifecycleTakesPriorityOverVelocityInference) {
   EXPECT_EQ(result.paths.front().interval.end_quality,"confirmed");
 }
 
+TEST(MotionWindow, DownstreamDelayMustFinishBeforeTrimming) {
+  auto data=motionWindowFixture();data.downstream=data.commands;
+  for(auto& v:data.downstream)if(v.stamp.ns>=7*kSecond&&v.stamp.ns<9*kSecond)v.omega=.1;
+  const auto result=evaluate(data,Config{});
+  EXPECT_EQ(result.paths.front().interval.end,10*kSecond);
+  EXPECT_EQ(result.paths.front().interval.termination,"inferred_velocity_standstill");
+  EXPECT_NE(result.paths.front().interval.reason.find("publication_window_ns=0..12000000000"),std::string::npos);
+}
+TEST(MotionWindow, SilentPublisherNeedsAnExplicitFinalZero) {
+  auto data=motionWindowFixture();data.commands.resize(71); // Last command is the zero at 7 s.
+  EXPECT_EQ(evaluate(data,Config{}).paths.front().interval.end,8*kSecond);
+  data.commands.pop_back(); // Last command is nonzero: silence is not stop evidence.
+  EXPECT_EQ(evaluate(data,Config{}).paths.front().interval.end,12*kSecond);
+  data=motionWindowFixture();data.downstream=data.commands;data.downstream.resize(70);
+  EXPECT_EQ(evaluate(data,Config{}).paths.front().interval.end,12*kSecond);
+}
+TEST(MotionWindow, FeedbackGapsInvalidityAndFramesCannotProveStoppedTail) {
+  auto data=motionWindowFixture();data.feedback.resize(81);
+  EXPECT_EQ(evaluate(data,Config{}).paths.front().interval.end,12*kSecond);
+  data=motionWindowFixture();data.feedback[115].valid=false;
+  EXPECT_EQ(evaluate(data,Config{}).paths.front().interval.end,12*kSecond);
+  data=motionWindowFixture();for(auto& v:data.feedback)v.frame="other_frame";
+  EXPECT_EQ(evaluate(data,Config{}).paths.front().interval.end,12*kSecond);
+  data=motionWindowFixture();data.feedback.erase(data.feedback.begin()+75,data.feedback.begin()+95);
+  EXPECT_EQ(evaluate(data,Config{}).paths.front().interval.end,10500000000LL);
+}
+TEST(MotionWindow, EntirelyStationaryWindowAndOtherEpochAreNotTrimmed) {
+  auto data=motionWindowFixture();for(auto& v:data.commands)v.vx=0;for(auto& v:data.feedback)v.vx=0;
+  const auto stationary=evaluate(data,Config{}).paths.front().interval;
+  EXPECT_EQ(stationary.start,0);EXPECT_EQ(stationary.end,12*kSecond);
+  data=motionWindowFixture();for(auto& v:data.feedback)v.stamp.epoch=1;
+  EXPECT_EQ(evaluate(data,Config{}).paths.front().interval.end,12*kSecond);
+}
+
 TEST(Correlation, ClosedUnknownTaskCannotGrowOrReceiveLateResult) {
   RunData d;d.start=kSecond;d.end=10*kSecond;d.log_compatible=true;
   d.events={{2*kSecond,1,1,"navigation_start","navigation","","log",{}},

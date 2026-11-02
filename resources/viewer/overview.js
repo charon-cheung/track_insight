@@ -34,7 +34,11 @@
     }
     root.append(element('h1','本轮测试总览'));
     const ranked=summary?.ranked_cases||0,excluded=summary?.excluded_cases||0;
-    root.append(element('p',cases.length+' 个路径 case · 横向精度可评价 '+ranked+' 个 · 排除 failed / replaced '+excluded+' 个 · 排除直线路径 '+(summary?.excluded_straight_case_ids?.length||0)+' 个（最大偏离 ≤ 2 cm）','overviewNote'));
+    root.append(element('p',cases.length+' 个路径 case · 横向精度可评价 '+ranked+' 个 · 排除 failed / replaced '+excluded+' 个 · 排除直线路径 '+(summary?.excluded_straight_case_ids?.length||0)+' 个（最大偏离 ≤ 2 cm）','overviewNote overviewIntro'));
+    const fileName=path=>String(path||'').split('/').filter(Boolean).pop()||'未提供';
+    const sources=element('p',undefined,'overviewNote overviewIntro overviewSources');
+    sources.append(element('span','日志文件：'+fileName(api.analysis.meta.log_path)),element('span','bag：'+fileName(api.analysis.meta.input_path)));
+    root.append(sources);
     const all=panel('所有 case 的跟踪精度');
     const listing=table(['Case',...columns.map(c=>c[2])]);
     listing.body.id='overviewCases';

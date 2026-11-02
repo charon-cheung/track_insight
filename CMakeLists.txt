@@ -20,7 +20,7 @@ find_package(yaml-cpp REQUIRED)
 
 add_library(track_insight_core
   src/core/time.cpp src/core/log_parser.cpp src/core/correlation.cpp src/core/tracking_matcher.cpp
-  src/core/velocity_aligner.cpp src/core/evaluator.cpp src/core/terminal.cpp src/core/anomalies.cpp src/config.cpp)
+  src/core/velocity_aligner.cpp src/core/motion_window.cpp src/core/evaluator.cpp src/core/terminal.cpp src/core/anomalies.cpp src/config.cpp)
 target_include_directories(track_insight_core PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)
 target_link_libraries(track_insight_core PUBLIC yaml-cpp)
