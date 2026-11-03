@@ -115,7 +115,7 @@ int renderReport(Json analysis,const fs::path& requested,const fs::path& resourc
       auto label=archive_name;replaceAll(label,"&","&amp;");replaceAll(label,"<","&lt;");
       replaceAll(label,">","&gt;");replaceAll(label,"\"","&quot;");
       archive_link="<a id=\"archiveHome\" href=\"../../index.html\" title=\""+label+
-        "\">测试总览</a>";
+        "\">所有测试列表</a>";
     }
     replaceAll(html,"__TRACK_STYLE__",readText(resources/"viewer"/"viewer.css"));
     replaceAll(html,"__TRACK_PLOTLY__",readText(resources/"viewer"/"plotly.min.js"));

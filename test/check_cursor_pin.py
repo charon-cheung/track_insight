@@ -77,9 +77,20 @@ async def main():
                     await asyncio.sleep(.05)
                 assert await js('!!window.trackInsight')
                 await js("(async()=>{const p=trackInsight.analysis.paths[0];await trackInsight.select([p],p.interval.id);})()")
+                # The persistent toggle can pin the current time without a plot click.
+                assert await js("document.getElementById('releaseCursor').getBoundingClientRect().width>0")
+                assert await js("document.getElementById('releaseCursor').textContent") == '已解除'
+                assert await js("getComputedStyle(document.getElementById('releaseCursor')).backgroundColor") == 'rgb(255, 255, 255)'
+                before = await snapshot()
+                await js("document.getElementById('releaseCursor').click()")
+                assert await js("document.getElementById('releaseCursor').textContent") == '已固定'
+                assert await js("getComputedStyle(document.getElementById('releaseCursor')).backgroundColor") == 'rgb(36, 115, 214)'
+                assert await frozen() == before
+                await js("document.getElementById('releaseCursor').click()")
+                assert await js("document.getElementById('releaseCursor').textContent") == '已解除'
                 await click('velocity', .3)
-                await frozen()  # Fails on the original hover-only implementation.
-                assert await js("!document.getElementById('releaseCursor').hidden")
+                await frozen()
+                assert await js("document.getElementById('releaseCursor').getAttribute('aria-pressed')==='true'")
                 for graph in ['velocity', 'errors']:
                     axes=await js("Object.keys(document.getElementById('"+graph+"')._fullLayout).filter(k=>/^xaxis[0-9]*$/.test(k)).map(k=>Number(k.slice(5)||1))")
                     for axis in axes:
@@ -107,7 +118,7 @@ async def main():
                 await frozen()
                 await js("document.getElementById('resetTime').click()")
                 await escape()
-                assert await js("document.getElementById('releaseCursor').hidden")
+                assert await js("document.getElementById('releaseCursor').getAttribute('aria-pressed')==='false'")
                 before = await js('trackInsight.cursor')
                 await mouse('mouseMoved', await point('velocity', .2))
                 assert abs(await js('trackInsight.cursor')-before) > .01, 'Escape did not restore hover'
@@ -115,27 +126,27 @@ async def main():
                 assert tooltip and all('\u00a0'*2 in text and '/ctrl/' not in text for text in tooltip), tooltip
                 await click('velocity', .3)
                 await js("document.getElementById('releaseCursor').click()")
-                assert await js("document.getElementById('releaseCursor').hidden")
+                assert await js("document.getElementById('releaseCursor').getAttribute('aria-pressed')==='false'")
                 # Right click and a drag returning to its start must never become a pin.
                 p = await point('velocity', .35)
                 await mouse('mousePressed', p, 'right')
                 await mouse('mouseReleased', p, 'right')
-                assert await js("document.getElementById('releaseCursor').hidden")
+                assert await js("document.getElementById('releaseCursor').getAttribute('aria-pressed')==='false'")
                 await escape()
                 start, end = await point('velocity', .25), await point('velocity', .65)
                 await mouse('mousePressed', start, 'left')
                 await mouse('mouseMoved', end)
                 await mouse('mouseMoved', start)
                 await mouse('mouseReleased', start, 'left')
-                assert await js("document.getElementById('releaseCursor').hidden"), 'Drag returning to its start pinned'
+                assert await js("document.getElementById('releaseCursor').getAttribute('aria-pressed')==='false'"), 'Drag returning to its start pinned'
                 await js("document.getElementById('resetTime').click()")
                 toolbar = await js("(()=>{const b=document.querySelector('#velocity .modebar-btn').getBoundingClientRect();return [b.x+b.width/2,b.y+b.height/2];})()")
                 await mouse('mousePressed', toolbar, 'left')
                 await mouse('mouseReleased', toolbar, 'left')
-                assert await js("document.getElementById('releaseCursor').hidden"), 'Toolbar click pinned'
+                assert await js("document.getElementById('releaseCursor').getAttribute('aria-pressed')==='false'"), 'Toolbar click pinned'
                 await click('velocity', .3)
                 await js("document.getElementById('play').click()")
-                assert await js("document.getElementById('releaseCursor').hidden")
+                assert await js("document.getElementById('releaseCursor').getAttribute('aria-pressed')==='false'")
                 before = await js('trackInsight.cursor')
                 await asyncio.sleep(.25)
                 assert await js('trackInsight.cursor') > before
@@ -147,26 +158,69 @@ async def main():
                 # Mode changes and maximization preserve the pin; Escape releases before exiting.
                 await js("document.getElementById('reportMode').click()")
                 await asyncio.sleep(.25)
-                assert await js("!document.getElementById('releaseCursor').hidden")
+                assert await js("document.getElementById('releaseCursor').getAttribute('aria-pressed')==='true'")
                 await frozen()
                 await js("document.getElementById('maximizeVelocity').click()")
                 await asyncio.sleep(.4)
-                assert await js("!document.getElementById('releaseVelocityCursor').hidden")
+                assert await js("document.getElementById('releaseVelocityCursor').getAttribute('aria-pressed')==='true'")
                 await click('velocity', .5)
                 await escape(held=True)
-                assert await js("document.getElementById('velocityView').open && document.getElementById('releaseVelocityCursor').hidden")
-                await click('velocity', .6)
+                assert await js("document.getElementById('velocityView').open && document.getElementById('releaseVelocityCursor').getAttribute('aria-pressed')==='false'")
+                assert await js("document.getElementById('releaseVelocityCursor').getBoundingClientRect().width>0")
                 await js("document.getElementById('releaseVelocityCursor').click()")
-                assert await js("document.getElementById('velocityView').open && document.getElementById('releaseVelocityCursor').hidden")
+                assert await js("document.getElementById('releaseVelocityCursor').textContent") == '已固定'
+                await frozen()
+                await js("document.getElementById('releaseVelocityCursor').click()")
+                assert await js("document.getElementById('velocityView').open && document.getElementById('releaseVelocityCursor').getAttribute('aria-pressed')==='false'")
                 await escape()
                 assert not await js("document.getElementById('velocityView').open")
                 await click('errors', .4)
                 await js("(async()=>{const p=trackInsight.analysis.paths.at(-1);await trackInsight.select([p],p.interval.id);})()")
-                assert await js("document.getElementById('releaseCursor').hidden")
+                assert await js("document.getElementById('releaseCursor').getAttribute('aria-pressed')==='false'")
+                # Fixed readouts use full samples: interpolate feedback, hold commands,
+                # and never fill invalid gaps. Keep test data inside the isolated page.
+                await js("""(async()=>{
+                  const a=trackInsight.analysis,p=a.paths.find(p=>p.end-p.start>4),t=p.start+.5;
+                  window.velocityTestTime=t;
+                  const rows=(v,w)=>[[t,...v,true,'0',t+1,''],[t+1,...w,true,'0',t+1.5,'']];
+                  a.signals={commands:rows([.7,.2,.1],[.2,.1,.3]),
+                    feedback:rows([.1,.2,.3],[.5,-.2,.1]),
+                    tracking_raw:rows([.9,.6,.8],[.4,.3,.2]),
+                    downstream:rows([.8,.4,.6],[.2,.1,.3])};
+                  a.meta.downstream_time_basis='bag_record';
+                  await trackInsight.select([p],p.interval.id);
+                  trackInsight.setCursor(t+.5);
+                  document.getElementById('releaseCursor').click();
+                })()""")
+                async def fixed_lines():
+                    return (await js("document.getElementById('velocity').layout.annotations.find(a=>a.name==='cursorTimestamp').text")).split('<br>')
+                gap = '\u00a0' * 3
+                lines = await fixed_lines()
+                assert len(lines) == 3, lines
+                assert lines[1] == gap.join(['反馈', 'vx 0.30', 'vy 0.00', 'ω 0.20']), lines
+                assert lines[2] == gap.join(['平滑', 'vx 0.80', 'vy 0.40', 'ω 0.60']), lines
+                assert '<br>' not in await js("document.getElementById('errors').layout.annotations.find(a=>a.name==='cursorTimestamp').text")
+                # Legend/checkbox visibility updates the fixed box without moving time.
+                before = await js('trackInsight.cursor')
+                await js("Plotly.restyle(document.getElementById('velocity'),{visible:'legendonly'},[3,4,5]).then(()=>null)")
+                assert len(await fixed_lines()) == 2
+                assert await js('trackInsight.cursor') == before
+                await js("Plotly.restyle(document.getElementById('velocity'),{visible:true}).then(()=>null)")
+                lines = await fixed_lines()
+                assert len(lines) == 5, lines
+                assert lines[1] == gap.join(['指令', 'vx 0.70', 'vy 0.20', 'ω 0.10']), lines
+                assert lines[3] == gap.join(['原始指令', 'vx 0.90', 'vy 0.60', 'ω 0.80']), lines
+                await js("document.getElementById('maximizeVelocity').click()")
+                await asyncio.sleep(.3)
+                assert await fixed_lines() == lines
+                await js('trackInsight.setCursor(velocityTestTime+2)')
+                assert all(line.count('—') == 3 for line in (await fixed_lines())[1:])
+                await js("document.getElementById('releaseVelocityCursor').click()")
+                assert len(await fixed_lines()) == 1
                 assert not errors, errors
                 await call('Browser.close')
                 chrome.wait(timeout=10)
-                print('PASS: pin/repin all visible subplots; synchronized freeze; step/seek/play; zoom; release; mode/maximize/Escape; case reset; no JS exceptions')
+                print('PASS: pin/repin all visible subplots; synchronized freeze; step/seek/play; zoom; release; mode/maximize/Escape; case reset; fixed three-axis precision/visibility/timing/gaps; no JS exceptions')
         finally:
             if chrome.poll() is None:
                 chrome.terminate()

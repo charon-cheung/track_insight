@@ -43,6 +43,17 @@ Json makeOverview(const Json& analysis) {
       else if(rmse==*worst)result["worst_ids"].push_back(id);
     }
   }
+  Json worstIds=Json::array(),suppressed=Json::array();
+  for(const auto& id:result["worst_ids"])for(const auto& path:analysis.at("paths")) {
+    if(path.at("interval").at("id")!=id)continue;
+    const auto& m=path.at("metrics").at("lateral");
+    const auto within=[&](const char* key,double limit) {
+      return m.contains(key)&&m[key].is_number()&&std::isfinite(m[key].get<double>())&&
+        m[key].get<double>()>=0&&m[key].get<double>()<=limit;
+    };
+    (within("p95",.05)&&within("max",.055)?suppressed:worstIds).push_back(id);
+  }
+  result["worst_ids"]=worstIds;result["suppressed_worst_ids"]=suppressed;
   for(const auto& [key,a]:averages)result["averages"][key]={
     {"case_mean_rmse",a.count?Json(double(a.sum/a.count)):Json(nullptr)},
     {"pooled_rmse",a.weight>0?Json(std::sqrt(double(a.squares/a.weight))):Json(nullptr)},

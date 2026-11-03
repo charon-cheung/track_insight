@@ -178,7 +178,18 @@
     traces.push({x:[],y:[],mode:'lines+markers',name:'位置与投影',line:{color:'#e36260',dash:'dot'},
       marker:{size:10,color:['#facc15','#e36260']},showlegend:false,hoverinfo:'skip'});
     traces.push({x:[],y:[],mode:'lines',name:'机器人方向',line:{color:trajectoryStyle.direction,width:4},showlegend:false,hoverinfo:'skip'});
-    await Plotly.react($('trajectory'),traces,{...common,legend:{...common.legend,entrywidth:80,entrywidthmode:'pixels'},hovermode:'closest',margin:{l:65,r:35,t:30,b:48},
+    const metrics=selected.length===1?selected[0].metrics:null;
+    const annotations=metrics?[
+      ['lateral','rmse','横向 RMSE'],['lateral','p95','横向 P95'],
+      ['lateral','max','最大横向误差'],['path_distance','rmse','路径距离 RMSE']
+    ].map(([key,stat,label],index)=>({
+      xref:'paper',yref:'paper',x:index%2*.52,y:1,xanchor:'left',yanchor:'bottom',
+      yshift:index<2?70:46,showarrow:false,font:{size:12},
+      text:label+'：<b>'+fmt(metrics[key]?.[stat])+' m</b>'
+    })):[];
+    await Plotly.react($('trajectory'),traces,{...common,annotations,
+      legend:{...common.legend,y:1,yanchor:'bottom',entrywidth:80,entrywidthmode:'pixels'},
+      hovermode:'closest',margin:{l:65,r:35,t:metrics?100:30,b:48},
       xaxis:{title:A.meta.frame+' x (m)',gridcolor:'#e8edf5',zeroline:false},
       yaxis:{title:A.meta.frame+' y (m)',scaleanchor:'x',scaleratio:1,gridcolor:'#e8edf5',zeroline:false},
       uirevision:selectedKey},config);
@@ -190,8 +201,9 @@
       result['yaxis'+suffix]={title:label,gridcolor:'#e8edf5',zerolinecolor:'#c3cfdf'};});
     return result;
   }
+  const velocitySamples=new Map();
   async function series() {
-    const velocity=[];
+    const velocity=[];velocitySamples.clear();
     for(const p of selected) {
       for(let group=0;group<4;group++) {
         const presentation=velocityStyles[group],source=A.signals?.[presentation.signal];
@@ -199,6 +211,7 @@
         if(group===3&&A.meta.downstream_time_basis!=='bag_record')continue;
         const rows=source?source.filter(r=>r[0]>=p.start&&r[0]<p.end):p.velocity.map(r=>[r[0],...r.slice(group?4:1,group?7:4),r[7],r[8],r[9],r[10]]);
         if(group>=2&&!rows.length)continue;
+        velocitySamples.set(p.interval.id+'/'+presentation.key,rows);
         const vr=reduce(rows,[1,2,3],4,6),key=presentation.key;
         for(let axis=0;axis<3;axis++)velocity.push({
           ...arrays(vr,r=>r[0],r=>r[1+axis],r=>r[4],r=>r[6],r=>groupedTimestamp(r[0])),
@@ -234,13 +247,37 @@
     while(lo<hi){const m=(lo+hi)>>1;if(rows[m][0]<=t)lo=m+1;else hi=m;}
     const r=rows[lo-1];return r&&t<=r[endIndex]+1e-9?r:null;
   }
+  function pinnedVelocityLines(path,t) {
+    const gap='\u00a0'.repeat(3),lines=[];
+    for(const presentation of velocityStyles) {
+      const control=velocityControls[presentation.key];if(!control.checked||control.disabled)continue;
+      const rows=path?velocitySamples.get(path.interval.id+'/'+presentation.key)||[]:[];
+      let lo=0,hi=rows.length;
+      while(lo<hi){const mid=(lo+hi)>>1;if(rows[mid][0]<=t)lo=mid+1;else hi=mid;}
+      const row=rows[lo-1],next=rows[lo];
+      let values=row&&row[4]&&t<=row[6]+1e-9?row.slice(1,4):[null,null,null];
+      if(presentation.key==='feedback'&&row&&t>row[0]&&values.every(Number.isFinite)) {
+        if(next&&next[4]&&next[0]<=row[6]+1e-9&&next[0]>row[0]) {
+          const fraction=(t-row[0])/(next[0]-row[0]);
+          values=values.map((value,i)=>Number.isFinite(next[i+1])?value+(next[i+1]-value)*fraction:null);
+        } else values=[null,null,null];
+      }
+      const label=presentation.key==='downstream'?'平滑':presentation.key==='tracking_raw'?'原始指令':presentation.label;
+      lines.push(label+gap+values.map((v,i)=>['vx','vy','ω'][i]+' '+(Number.isFinite(v)?fmt(v,2):'—')).join(gap));
+    }
+    return lines;
+  }
   function setCursorPinned(pinned) {
     cursorPinned=pinned;
-    for(const id of ['releaseCursor','releaseVelocityCursor'])$(id).hidden=!pinned;
+    for(const id of ['releaseCursor','releaseVelocityCursor']) {
+      const button=$(id);button.classList.toggle('active',pinned);
+      button.textContent=pinned?'已固定':'已解除';button.setAttribute('aria-pressed',String(pinned));
+      button.title=pinned?'解除固定，恢复鼠标联动（Esc）':'固定当前时刻，暂停鼠标联动';
+    }
     if(pinned) {
       playing=false;lastFrame=0;$('play').textContent='播放';
       for(const id of ['velocity','errors'])Plotly.Fx.unhover($(id));
-    }
+    } else if(ready)setCursor(cursor);
   }
   function pinCursor(t) {
     if(!ready||!Number.isFinite(t))return;
@@ -270,11 +307,12 @@
     const timestamp=groupedTimestamp(cursor);
     for(const id of ['velocity','errors']) {
       const plot=$(id),axes=plot._fullLayout,axis=axes.xaxis;
-      const pixel=axis.l2p(cursor),halfWidth=Math.min(axis._length,timestamp.length*6.7+10)/2;
+      const lines=[timestamp,...(id==='velocity'&&cursorPinned?pinnedVelocityLines(p,cursor):[])];
+      const pixel=axis.l2p(cursor),halfWidth=Math.min(axis._length,Math.max(...lines.map(line=>line.length))*6.7+10)/2;
       const annotations=(plot.layout.annotations||[]).filter(a=>a.name!=='cursorTimestamp');
       annotations.push({name:'cursorTimestamp',xref:'x',yref:'paper',x:cursor,
         y:axes.yaxis2?(axes.yaxis.domain[0]+axes.yaxis2.domain[1])/2:.5,
-        text:timestamp,showarrow:false,xanchor:'center',yanchor:'middle',
+        text:lines.join('<br>'),align:'left',showarrow:false,xanchor:'center',yanchor:'middle',
         xshift:Math.max(halfWidth,Math.min(axis._length-halfWidth,pixel))-pixel,
         visible:pixel>=0&&pixel<=axis._length,font:{family:'monospace',size:11,color:'#445873'},
         bgcolor:'#ffffff',bordercolor:'#c8d5e6',borderwidth:1,borderpad:3});
@@ -361,7 +399,7 @@
     playing=false;lastFrame=0;$('play').textContent='播放';
     setCursor(range[0]+Number($('timeline').value)/10000*(range[1]-range[0]));
   };
-  for(const id of ['releaseCursor','releaseVelocityCursor'])$(id).onclick=()=>setCursorPinned(false);
+  for(const id of ['releaseCursor','releaseVelocityCursor'])$(id).onclick=()=>cursorPinned?setCursorPinned(false):pinCursor(cursor);
   let releasingEscape=false;
   document.addEventListener('keydown',e=>{
     if(e.key==='Escape'&&(cursorPinned||releasingEscape)) {
@@ -438,6 +476,7 @@
         const traces=$('velocity').data.filter(trace=>trace.legendgroup===key);
         if(traces.length)input.checked=traces.some(trace=>trace.visible!==false&&trace.visible!=='legendonly');
       }
+      if(cursorPinned)setCursor(cursor);
     });
     $('trajectory').on('plotly_relayout',e=>{
       if(Object.keys(e).some(key=>/^[xy]axis\.(range|autorange)/.test(key)))setCursor(cursor);

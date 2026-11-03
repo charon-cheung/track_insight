@@ -142,10 +142,10 @@ async def main():
                 await select(second)
                 await js("document.getElementById('deleteSelection').click()")
                 await asyncio.sleep(.15)
-                assert (await state())['black']==[]
+                assert second not in (await state())['black']
                 await js("document.getElementById('reportMode').click()")
                 await asyncio.sleep(.15)
-                assert second in (await state())['black'],'Review hiding leaked into report mode'
+                assert second not in (await state())['black'],'Deleted case reappeared in report mode'
                 await js("document.getElementById('overviewNavigation').click()")
                 assert await js("getComputedStyle(document.getElementById('caseIssuePanel')).display==='none'")
                 assert await js("['favoritePicker','blackFavoritePicker'].every(id=>getComputedStyle(document.getElementById(id)).display==='none')")
@@ -184,7 +184,7 @@ async def main():
                     assert await js("(()=>{const boxes=['.viewNavigation','.viewCenter','.viewActions'].map(s=>document.querySelector(s).getBoundingClientRect());return boxes.every((a,i)=>boxes.slice(i+1).every(b=>a.right<=b.left+1||b.right<=a.left+1||a.bottom<=b.top+1||b.bottom<=a.top+1));})()"),'Toolbar groups overlap'
                 assert await js("document.getElementById('failureBanner').hidden")
                 assert not errors,errors
-                print('PASS: legacy migration; red/black exclusivity and cancellation; both pickers; reload; v1/v2/v3 import/export; per-case problem autosave/reload/import; editor alignment; storage failure notice; rejected imports atomic; hide/restore; report isolation; centered toolbar; unchanged analysis')
+                print('PASS: legacy migration; red/black exclusivity and cancellation; both pickers; reload; v1/v2/v3 import/export; per-case problem autosave/reload/import; editor alignment; storage failure notice; rejected imports atomic; hide/restore; both-mode deletion; centered toolbar; unchanged analysis')
                 await call('Browser.close')
                 chrome.wait(timeout=10)
         finally:

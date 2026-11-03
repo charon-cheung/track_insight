@@ -45,7 +45,10 @@ async def main():
                     assert 'exceptionDetails' not in result, result
                     return result.get('result', {}).get('value')
                 await call('Runtime.enable')
+                await call('Page.enable')
                 await call('Emulation.setDeviceMetricsOverride', {'width':1920,'height':1080,'deviceScaleFactor':1,'mobile':False})
+                # Make a known failing candidate even when the real round meets the limits.
+                await call('Page.addScriptToEvaluateOnNewDocument',{'source':"document.addEventListener('trackinsight:ready',()=>{const a=trackInsight.analysis,s=a.overview;if(!s.worst_ids.length)s.worst_ids=s.suppressed_worst_ids||[];s.suppressed_worst_ids=[];for(const p of a.paths)if(s.worst_ids.includes(p.interval.id)){p.metrics.lateral.p95=.1;p.metrics.lateral.max=.1;}});"})
                 await call('Page.navigate', {'url':Path(args.report).resolve().as_uri()})
                 for _ in range(200):
                     if await js('!!window.trackInsight'):break
@@ -89,12 +92,28 @@ async def main():
                 await js("(()=>{const m=trackInsight.analysis.meta,k='trackInsight:stars:v2:'+JSON.stringify([m.input_sha256,m.start_ns,m.end_ns]);localStorage.setItem(k,JSON.stringify({red:[],black:["+json.dumps(third)+"]}));})()")
                 tied=[first,second]
                 await call('Page.enable')
-                script=await call('Page.addScriptToEvaluateOnNewDocument',{'source':"document.addEventListener('trackinsight:ready',()=>{trackInsight.analysis.overview.worst_ids="+json.dumps(tied)+";});"})
+                script=await call('Page.addScriptToEvaluateOnNewDocument',{'source':"document.addEventListener('trackinsight:ready',()=>{trackInsight.analysis.overview.worst_ids="+json.dumps(tied)+";for(const p of trackInsight.analysis.paths)if(trackInsight.analysis.overview.worst_ids.includes(p.interval.id)){p.metrics.lateral.p95=.1;p.metrics.lateral.max=.1;}});"})
                 await reload()
                 assert set((await state())['black'])==set(tied+[third]),(await state(),await js('trackInsight.analysis.overview.worst_ids'),errors)
                 await call('Page.removeScriptToEvaluateOnNewDocument',{'identifier':script['identifier']})
                 await reload()
                 assert await js('JSON.stringify({overview:trackInsight.analysis.overview,metrics:trackInsight.analysis.paths.map(p=>p.metrics)})')==original
+                # Thresholds remove only the worst label and automatic black star.
+                await js("""(()=>{const a=trackInsight.analysis,id=a.overview.worst_ids[0];
+                  window.thresholdCase=id;const m=a.paths.find(p=>p.interval.id===id).metrics.lateral;
+                  m.p95=.05;m.max=.055;
+                  document.dispatchEvent(new Event('trackinsight:cases'));
+                })()""")
+                threshold_case=await js('thresholdCase')
+                assert await js('trackInsight.reportOverview.worst_ids.length')==0
+                assert await js("document.querySelectorAll('#overviewCases .overviewWorst').length")==0
+                assert threshold_case not in (await state())['black']
+                await select(threshold_case)
+                await js("document.getElementById('toggleBlackFavorite').click();document.dispatchEvent(new Event('trackinsight:cases'))")
+                assert threshold_case in (await state())['black'],'Manual black star was removed'
+                for field,limit in [('p95',.05),('max',.055)]:
+                    await js("(()=>{const m=trackInsight.analysis.paths.find(p=>p.interval.id===thresholdCase).metrics.lateral;m.p95=.05;m.max=.055;m["+json.dumps(field)+"]="+str(limit+1e-8)+";document.dispatchEvent(new Event('trackinsight:cases'));})()")
+                    assert await js('trackInsight.reportOverview.worst_ids')==[threshold_case]
                 assert not errors,errors
                 print('PASS: automatic worst stars; cancellation/reload; red override; migration; tied cases; existing stars preserved; unchanged analysis')
                 await call('Browser.close')

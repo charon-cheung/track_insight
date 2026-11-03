@@ -97,3 +97,21 @@ TEST(Overview, ReportProjectionRemovesStraightPathsAndContaminatedNavigationAggr
   EXPECT_TRUE(a["navigation_metrics"].empty());EXPECT_EQ(a["overview"],original["overview"]);
   const auto once=a;excludeStraightPaths(a);EXPECT_EQ(a,once);
 }
+
+TEST(Overview, WorstCandidateWithinBothLimitsIsNotMarked) {
+  Json a={{"tasks",Json::array()},{"paths",Json::array({path("E1","",.02,1,1),path("E2","",.03,1,1)})}};
+  auto& m=a["paths"][1]["metrics"]["lateral"];m["p95"]=.05;m["max"]=.055;
+  const auto baseline=makeOverview(a);
+  EXPECT_TRUE(baseline["worst_ids"].empty());
+  EXPECT_EQ(baseline["suppressed_worst_ids"],Json::array({"E2"}));
+  EXPECT_EQ(baseline["best_ids"],Json::array({"E1"}));
+  for(const auto* key:{"p95","max"}) {
+    const double limit=m[key];m[key]=std::nextafter(limit,1.0);
+    EXPECT_EQ(makeOverview(a)["worst_ids"],Json::array({"E2"}));
+    m[key]=nullptr;EXPECT_EQ(makeOverview(a)["worst_ids"],Json::array({"E2"}));
+    m[key]=limit;
+  }
+  a["paths"][0]["metrics"]["lateral"]["rmse"]=.03;
+  EXPECT_EQ(makeOverview(a)["worst_ids"],Json::array({"E1"}));
+  EXPECT_NEAR(baseline["averages"]["lateral"]["case_mean_rmse"].get<double>(),.025,1e-12);
+}

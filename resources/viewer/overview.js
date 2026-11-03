@@ -2,8 +2,8 @@
 (() => {
   document.addEventListener('trackinsight:ready',()=>{
     const api=window.trackInsight,$=id=>document.getElementById(id),root=$('reportOverview');
-    const summary=api.analysis.overview,paths=new Map(api.analysis.paths.map(p=>[p.interval.id,p]));
-    const cases=(summary?.case_ids||[]).map(id=>paths.get(id)).filter(Boolean);
+    const originalSummary=api.analysis.overview,paths=new Map(api.analysis.paths.map(p=>[p.interval.id,p]));
+    let cases=[];
     const fmt=(v,d=3)=>Number.isFinite(v)?v.toFixed(d):'—';
     const columns=[['lateral','rmse','横向 RMSE (m)'],['lateral','p95','横向 P95 (m)'],
       ['lateral','max','最大横向误差 (m)'],['path_distance','rmse','路径距离 RMSE (m)'],
@@ -32,66 +32,113 @@
       const section=element('section',undefined,'panel'),heading=element('div',undefined,'panelTitle');
       heading.append(element('h2',title));section.append(heading);return section;
     }
-    root.append(element('h1','本轮测试总览'));
-    const ranked=summary?.ranked_cases||0,excluded=summary?.excluded_cases||0;
-    root.append(element('p',cases.length+' 个路径 case · 横向精度可评价 '+ranked+' 个 · 排除 failed / replaced '+excluded+' 个 · 排除直线路径 '+(summary?.excluded_straight_case_ids?.length||0)+' 个（最大偏离 ≤ 2 cm）','overviewNote overviewIntro'));
-    const fileName=path=>String(path||'').split('/').filter(Boolean).pop()||'未提供';
-    const sources=element('p',undefined,'overviewNote overviewIntro overviewSources');
-    sources.append(element('span','日志文件：'+fileName(api.analysis.meta.log_path)),element('span','bag：'+fileName(api.analysis.meta.input_path)));
-    root.append(sources);
-    const all=panel('所有 case 的跟踪精度');
-    const listing=table(['Case',...columns.map(c=>c[2])]);
-    listing.body.id='overviewCases';
-    const caseRows=[],best=new Set(summary?.best_ids||[]),worst=new Set(summary?.worst_ids||[]);
-    for(const p of cases) {
-      const row=element('tr');row.dataset.case=p.interval.id;
-      const ranks=[];
-      if(best.has(p.interval.id)){row.classList.add('overviewBest');ranks.push('最好');}
-      if(worst.has(p.interval.id)){row.classList.add('overviewWorst');ranks.push('最差');}
-      const label=element('td');label.append(caseButton(p));
-      if(ranks.length)label.append(element('span',ranks.join(' / '),'overviewRank'));
-      row.append(label);
-      const values=columns.map(([key,stat])=>fmt(p.metrics[key]?.[stat]));
-      for(const value of values)row.append(element('td',value));listing.body.append(row);
-      caseRows.push({path:p,row,index:caseRows.length});
-    }
-    if(!cases.length){const row=element('tr'),cell=element('td','没有符合条件的路径 case。');cell.colSpan=columns.length+1;row.append(cell);listing.body.append(row);}
-    let sortStat=null,ascending=true;
-    const sortHeaders=columns.slice(0,3).map(([,stat,label],index)=>{
-      const header=listing.scroll.querySelectorAll('th')[index+1],button=element('button',label+' ↕','overviewSort');
-      button.type='button';button.setAttribute('aria-label',label+'，升序排序');
-      header.setAttribute('aria-sort','none');header.replaceChildren(button);
-      button.onclick=()=>{
-        ascending=sortStat===stat?!ascending:true;sortStat=stat;
-        const ordered=caseRows.slice().sort((a,b)=>{
-          const x=a.path.metrics.lateral?.[stat],y=b.path.metrics.lateral?.[stat];
-          const validX=Number.isFinite(x),validY=Number.isFinite(y);
-          if(validX!==validY)return validX?-1:1;
-          return (validX?(ascending?x-y:y-x):0)||a.index-b.index;
-        });
-        for(const entry of ordered)listing.body.append(entry.row);
-        for(const item of sortHeaders) {
-          const active=item.stat===stat;
-          item.header.setAttribute('aria-sort',active?(ascending?'ascending':'descending'):'none');
-          item.button.textContent=item.label+' '+(active?(ascending?'↑':'↓'):'↕');
-          item.button.setAttribute('aria-label',item.label+'，'+(active&&ascending?'降序':'升序')+'排序');
+    function summarize() {
+      const original=(originalSummary?.case_ids||[]).map(id=>paths.get(id)).filter(Boolean);
+      cases=original.filter(p=>!api.isCaseDeleted(p.interval.id));
+      if(cases.length===original.length)return applyWorstLimits(originalSummary);
+      // Match makeOverview: valid duration > 0; missing/negative RMSE is excluded.
+      const valid=m=>Number.isFinite(m?.rmse)&&m.rmse>=0&&Number.isFinite(m.valid_s)&&m.valid_s>0;
+      const summary={...originalSummary,case_ids:cases.map(p=>p.interval.id),best_ids:[],worst_ids:[],suppressed_worst_ids:[],
+        deleted_cases:original.length-cases.length,ranked_cases:0,averages:{}};
+      for(const key of metricKeys) {
+        let sum=0,squares=0,weight=0,candidate=0,count=0,unit=originalSummary.averages[key]?.unit||'';
+        for(const p of cases) {
+          const m=p.metrics[key];if(!m)continue;unit=m.unit||'';
+          if(Number.isFinite(m.candidate_s)&&m.candidate_s>0)candidate+=m.candidate_s;
+          if(!valid(m))continue;
+          sum+=m.rmse;squares+=m.rmse*m.rmse*m.valid_s;weight+=m.valid_s;++count;
         }
-      };
-      return {stat,label,header,button};
-    });
-    all.append(element('p','按未四舍五入的横向 RMSE 标记：天蓝色为最好，红色为最差；相同值并列标记。','overviewNote'),listing.scroll);root.append(all);
-    const averages=panel('所有 case 的平均跟踪精度');
-    const means=table(['指标','case 平均 RMSE','整体 RMSE（按有效时长合并）','纳入 case 数']);
-    means.body.id='overviewAverages';
-    for(const key of metricKeys) {
-      const m=summary?.averages?.[key]||{},row=element('tr');row.dataset.metric=key;
-      for(const value of [api.metricNames[key]||key,fmt(m.case_mean_rmse,4)+(m.unit?' '+m.unit:''),
-        fmt(m.pooled_rmse,4)+(m.unit?' '+m.unit:''),(m.case_count||0)+' / '+cases.length])row.append(element('td',value));
-      means.body.append(row);
+        summary.averages[key]={case_mean_rmse:count?sum/count:null,pooled_rmse:weight?Math.sqrt(squares/weight):null,
+          case_count:count,valid_s:weight,candidate_s:candidate,coverage:candidate?weight/candidate:null,unit};
+      }
+      let best=Infinity,worst=-Infinity;
+      for(const p of cases) {
+        const m=p.metrics.lateral;if(!valid(m))continue;++summary.ranked_cases;
+        const id=p.interval.id;
+        if(m.rmse<best){best=m.rmse;summary.best_ids=[id];}else if(m.rmse===best)summary.best_ids.push(id);
+        if(m.rmse>worst){worst=m.rmse;summary.worst_ids=[id];}else if(m.rmse===worst)summary.worst_ids.push(id);
+      }
+      return applyWorstLimits(summary);
     }
-    averages.append(means.scroll,element('p','case 平均 RMSE = 各有效 case 的 RMSE 算术平均；整体 RMSE = √[Σ(RMSE² × 有效时长) / Σ有效时长]。缺失项不按 0 计算，不参与对应均值。','overviewNote'));
-    root.append(averages);
-    root.append(element('p','速度指标均为反馈 − 指令的残差；姿态误差缺少已验证目标朝向时不可用。定位轨迹不是独立真值。','overviewNote'));
+    function applyWorstLimits(summary) {
+      const worst=[],suppressed=[...(summary.suppressed_worst_ids||[])];
+      for(const id of summary.worst_ids||[]) {
+        const m=paths.get(id)?.metrics.lateral;
+        const within=(value,limit)=>Number.isFinite(value)&&value>=0&&value<=limit;
+        (within(m?.p95,.05)&&within(m?.max,.055)?suppressed:worst).push(id);
+      }
+      return {...summary,worst_ids:worst,suppressed_worst_ids:suppressed};
+    }
+    const content=element('div');root.append(content);
+    function render() {
+      const summary=summarize();api.reportOverview=summary;content.replaceChildren();
+      const heading=element('h1','本轮测试总览'),runName=$('archiveHome')?.title;
+      if(runName)heading.append(element('span',' ('+runName+')','overviewRunName'));
+      content.append(heading);
+      content.append(element('p',$('runTime').textContent,'overviewNote overviewIntro overviewTime'));
+      const ranked=summary?.ranked_cases||0,excluded=summary?.excluded_cases||0;
+      content.append(element('p',cases.length+' 个路径 case'+(summary.deleted_cases?' · 已删除 '+summary.deleted_cases+' 个':'')+' · 横向精度可评价 '+ranked+' 个 · 排除 failed / replaced '+excluded+' 个 · 排除直线路径 '+(summary?.excluded_straight_case_ids?.length||0)+' 个（最大偏离 ≤ 2 cm）','overviewNote overviewIntro'));
+      const fileName=path=>String(path||'').split('/').filter(Boolean).pop()||'未提供';
+      const sources=element('p',undefined,'overviewNote overviewIntro overviewSources');
+      sources.append(element('span','日志文件：'+fileName(api.analysis.meta.log_path)),element('span','bag：'+fileName(api.analysis.meta.input_path)));
+      content.append(sources);
+      const all=panel('所有 case 的跟踪精度');
+      const listing=table(['Case',...columns.map(c=>c[2])]);
+      listing.body.id='overviewCases';
+      const caseRows=[],best=new Set(summary?.best_ids||[]),worst=new Set(summary?.worst_ids||[]);
+      for(const p of cases) {
+        const row=element('tr');row.dataset.case=p.interval.id;
+        const ranks=[];
+        if(best.has(p.interval.id)){row.classList.add('overviewBest');ranks.push('最好');}
+        if(worst.has(p.interval.id)){row.classList.add('overviewWorst');ranks.push('最差');}
+        const label=element('td');label.append(caseButton(p));
+        if(ranks.length)label.append(element('span',ranks.join(' / '),'overviewRank'));
+        row.append(label);
+        const values=columns.map(([key,stat])=>fmt(p.metrics[key]?.[stat]));
+        for(const value of values)row.append(element('td',value));listing.body.append(row);
+        caseRows.push({path:p,row,index:caseRows.length});
+      }
+      if(!cases.length){const row=element('tr'),cell=element('td','没有符合条件的路径 case。');cell.colSpan=columns.length+1;row.append(cell);listing.body.append(row);}
+      let sortStat=null,ascending=true;
+      const sortHeaders=columns.slice(0,3).map(([,stat,label],index)=>{
+        const header=listing.scroll.querySelectorAll('th')[index+1],button=element('button',label+' ↕','overviewSort');
+        button.type='button';button.setAttribute('aria-label',label+'，升序排序');
+        header.setAttribute('aria-sort','none');header.replaceChildren(button);
+        button.onclick=()=>{
+          ascending=sortStat===stat?!ascending:true;sortStat=stat;
+          const ordered=caseRows.slice().sort((a,b)=>{
+            const x=a.path.metrics.lateral?.[stat],y=b.path.metrics.lateral?.[stat];
+            const validX=Number.isFinite(x),validY=Number.isFinite(y);
+            if(validX!==validY)return validX?-1:1;
+            return (validX?(ascending?x-y:y-x):0)||a.index-b.index;
+          });
+          for(const entry of ordered)listing.body.append(entry.row);
+          for(const item of sortHeaders) {
+            const active=item.stat===stat;
+            item.header.setAttribute('aria-sort',active?(ascending?'ascending':'descending'):'none');
+            item.button.textContent=item.label+' '+(active?(ascending?'↑':'↓'):'↕');
+            item.button.setAttribute('aria-label',item.label+'，'+(active&&ascending?'降序':'升序')+'排序');
+          }
+        };
+        return {stat,label,header,button};
+      });
+      all.append(element('p','按未四舍五入的横向 RMSE 标记：天蓝色为最好，红色为最差；相同值并列标记。','overviewNote'),listing.scroll);content.append(all);
+      const averages=panel('所有 case 的平均跟踪精度');
+      const means=table(['指标','case 平均 RMSE','整体 RMSE（按有效时长合并）','纳入 case 数']);
+      means.body.id='overviewAverages';
+      for(const key of metricKeys) {
+        const m=summary?.averages?.[key]||{},row=element('tr');row.dataset.metric=key;
+        for(const value of [api.metricNames[key]||key,fmt(m.case_mean_rmse,4)+(m.unit?' '+m.unit:''),
+          fmt(m.pooled_rmse,4)+(m.unit?' '+m.unit:''),(m.case_count||0)+' / '+cases.length])row.append(element('td',value));
+        means.body.append(row);
+      }
+      averages.append(means.scroll,element('p','case 平均 RMSE = 各有效 case 的 RMSE 算术平均；整体 RMSE = √[Σ(RMSE² × 有效时长) / Σ有效时长]。缺失项不按 0 计算，不参与对应均值。','overviewNote'));
+      content.append(averages);
+      content.append(element('p','速度指标均为反馈 − 指令的残差；姿态误差缺少已验证目标朝向时不可用。定位轨迹不是独立真值。','overviewNote'));
+      document.dispatchEvent(new CustomEvent('trackinsight:overview',{detail:summary}));
+    }
+    document.addEventListener('trackinsight:cases',render);
+    render();
     function show(visible) {
       if(visible&&$('play').textContent==='暂停')$('play').click();
       document.body.classList.toggle('report-overview',visible);root.hidden=!visible;

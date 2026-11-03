@@ -119,12 +119,23 @@
       selection.replaceChildren();
       for(const button of $('navigation').querySelectorAll('button')) {
         button.firstChild.textContent=button.dataset[labelMode];
-        button.hidden=button.dataset.reportExcluded==='true'||(review&&records.hidden.has(button.dataset.key));
+        const key=button.dataset.key;
+        const affectedTask=api.analysis.paths.some(p=>p.interval.navigation_id===key&&records.isDeleted(p.interval.id));
+        // A whole-navigation aggregate cannot represent only its remaining paths.
+        button.hidden=button.dataset.reportExcluded==='true'||records.isDeleted(key)||affectedTask;
         if(!button.hidden)selection.add(new Option(button.dataset[labelMode],button.dataset.key));
       }
       for(const group of $('navigation').querySelectorAll('details.navigationTask')) {
         group.hidden=[...group.querySelectorAll('button')].every(button=>button.hidden);
+        const heading=group.querySelector('summary'),parent=heading.querySelector('button');
+        if(parent) {
+          let caption=heading.querySelector('.remainingCases');
+          if(!caption){caption=document.createElement('span');caption.className='remainingCases';heading.append(caption);}
+          caption.hidden=!parent.hidden;
+          caption.textContent=parent.dataset.key+' · '+[...group.children].filter(e=>e.tagName==='BUTTON'&&!e.hidden).length+' 条路径';
+        }
       }
+      $('pathCount').textContent=new Set(api.analysis.paths.filter(p=>!records.isDeleted(p.interval.id)).map(p=>p.interval.plan_id)).size+' P';
       selection.value=api.selected;
       selection.disabled=selection.options.length===0;
       if(selection.selectedIndex<0) {
@@ -149,7 +160,10 @@
     }
     $('reportMode').onclick=()=>setMode(false);$('reviewMode').onclick=()=>setMode(true);
     new ResizeObserver(scheduleResize).observe($('chartDeck'));
-    const records=window.createReviewRecords(api,()=>updateNavigation(body.classList.contains('review-mode'),Math.max(0,selection.selectedIndex)));
+    const records=window.createReviewRecords(api,casesChanged=>{
+      updateNavigation(body.classList.contains('review-mode'),Math.max(0,selection.selectedIndex));
+      if(casesChanged)document.dispatchEvent(new Event('trackinsight:cases'));
+    });
     records.refresh();
     setMode(true);
   },{once:true});
