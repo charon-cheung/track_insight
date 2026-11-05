@@ -113,4 +113,4 @@ body:not(.review-mode) .viewCenter{display:contents}
 body:not(.review-mode) #archiveHome{order:1}
 body:not(.review-mode) .viewActions{order:3;margin-left:auto;gap:18px}
 body:not(.review-mode) :is(#toggleSidebar,#archiveHome,#reportMode,#reviewMode){font-size:19.2px;padding:10px 16px;min-height:46px;white-space:nowrap}
-body:not(.review-mode) #archiveHome{font-size:28.8px}
+body:not(.review-mode) :is(#toggleSidebar,#archiveHome){width:9em;height:46px;line-height:24px}

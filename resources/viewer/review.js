@@ -110,7 +110,7 @@
     new ResizeObserver(scheduleResize).observe(velocityView);
     $('toggleSidebar').onclick=()=>{
       const collapsed=body.classList.toggle('sidebar-collapsed');
-      $('toggleSidebar').textContent=collapsed?'展开导航':'收起导航';
+      $('toggleSidebar').textContent=collapsed?'展开case列表':'收起case列表';
       $('toggleSidebar').setAttribute('aria-expanded',String(!collapsed));scheduleResize();
     };
     function updateNavigation(review,fallbackIndex=0) {
