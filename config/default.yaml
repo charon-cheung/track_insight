@@ -13,10 +13,35 @@ timing:
   max_velocity_gap_ms: 200
   max_command_age_ms: 200
   max_log_age_ms: 100
+  # 以下新容差均可为 0（严格匹配），单位 ms，范围 [0, 60000]。
+  # action 与导航日志目标、日志位姿与 bag 位姿的时间关联容差（含边界）。
+  log_match_tolerance_ms: 100
+  # 回退量严格大于此值才分隔日志/record epoch 或使 header 链失效；PID 快照同用。
+  clock_reset_tolerance_ms: 1000
+  # 速度/TF header 与 record 时间最大允许差（含边界）；平滑命令仍使用 record 时间。
+  clock_domain_tolerance_ms: 5000
 geometry:
   max_jump_speed_mps: 5.0
   jump_distance_m: 0.15
   progress_window_m: 2.0
+  # 以下几何容差单位 m，范围 [0, 1000000]。
+  # 相对上次匹配进度允许的最大回退量（含边界）。
+  progress_backtrack_m: 0.15
+  # 距离最优投影不超过此差值的其它投影，才参与分支歧义检查。
+  branch_distance_tolerance_m: 0.01
+  # 上述候选沿路径的进度差严格大于此值，则匹配不可用。
+  branch_progress_separation_m: 0.25
+log_matching:
+  # 位姿关联距离容差（m，含边界，范围 [0, 1000000]）。
+  pose_tolerance_m: 0.10
+  # 关联所需最低分数，整数 [1, 1000000]；共享路径身份计 2，匹配位姿计 1。
+  # 只改变门槛，不改变路径身份校验及位姿匹配算法。
+  min_anchor_score: 2
+report:
+  # 两项均不超限时，免除最差标记及自动黑星；不改变指标或人工星标。
+  # 单位 m，范围 [0, 1000000]。保存于报告，删除 case 后仍按本轮值重算。
+  worst_case_p95_limit_m: 0.05
+  worst_case_max_limit_m: 0.055
 motion:
   stopped_linear_mps: 0.02
   stopped_angular_radps: 0.03

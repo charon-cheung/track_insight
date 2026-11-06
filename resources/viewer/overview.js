@@ -35,39 +35,28 @@
     function summarize() {
       const original=(originalSummary?.case_ids||[]).map(id=>paths.get(id)).filter(Boolean);
       cases=original.filter(p=>!api.isCaseDeleted(p.interval.id));
-      if(cases.length===original.length)return applyWorstLimits(originalSummary);
-      // Match makeOverview: valid duration > 0; missing/negative RMSE is excluded.
-      const valid=m=>Number.isFinite(m?.rmse)&&m.rmse>=0&&Number.isFinite(m.valid_s)&&m.valid_s>0;
-      const summary={...originalSummary,case_ids:cases.map(p=>p.interval.id),best_ids:[],worst_ids:[],suppressed_worst_ids:[],
+      if(cases.length===original.length)return originalSummary;
+      const saved=originalSummary.selection,keep=new Set(cases.map(p=>p.interval.id));
+      const summary={...originalSummary,case_ids:[...keep],best_ids:[],worst_ids:[],suppressed_worst_ids:[],
         deleted_cases:original.length-cases.length,ranked_cases:0,averages:{}};
-      for(const key of metricKeys) {
-        let sum=0,squares=0,weight=0,candidate=0,count=0,unit=originalSummary.averages[key]?.unit||'';
-        for(const p of cases) {
-          const m=p.metrics[key];if(!m)continue;unit=m.unit||'';
-          if(Number.isFinite(m.candidate_s)&&m.candidate_s>0)candidate+=m.candidate_s;
-          if(!valid(m))continue;
-          sum+=m.rmse;squares+=m.rmse*m.rmse*m.valid_s;weight+=m.valid_s;++count;
-        }
-        summary.averages[key]={case_mean_rmse:count?sum/count:null,pooled_rmse:weight?Math.sqrt(squares/weight):null,
-          case_count:count,valid_s:weight,candidate_s:candidate,coverage:candidate?weight/candidate:null,unit};
+      // C++ owns eligibility, weighting and ranking; merge only its saved contributions.
+      const totals={};
+      for(const id of keep)for(const [key,c] of Object.entries(saved.contributions[id])) {
+        const a=totals[key]||(totals[key]={rmse_sum:0,squared_error_s:0,valid_s:0,candidate_s:0,count:0});
+        for(const field of ['rmse_sum','squared_error_s','valid_s','candidate_s','count'])a[field]+=c[field]??NaN;
+        a.unit=c.unit;
       }
-      let best=Infinity,worst=-Infinity;
-      for(const p of cases) {
-        const m=p.metrics.lateral;if(!valid(m))continue;++summary.ranked_cases;
-        const id=p.interval.id;
-        if(m.rmse<best){best=m.rmse;summary.best_ids=[id];}else if(m.rmse===best)summary.best_ids.push(id);
-        if(m.rmse>worst){worst=m.rmse;summary.worst_ids=[id];}else if(m.rmse===worst)summary.worst_ids.push(id);
-      }
-      return applyWorstLimits(summary);
-    }
-    function applyWorstLimits(summary) {
-      const worst=[],suppressed=[...(summary.suppressed_worst_ids||[])];
-      for(const id of summary.worst_ids||[]) {
-        const m=paths.get(id)?.metrics.lateral;
-        const within=(value,limit)=>Number.isFinite(value)&&value>=0&&value<=limit;
-        (within(m?.p95,.05)&&within(m?.max,.055)?suppressed:worst).push(id);
-      }
-      return {...summary,worst_ids:worst,suppressed_worst_ids:suppressed};
+      for(const [key,a] of Object.entries(totals))summary.averages[key]={
+        case_mean_rmse:a.count?a.rmse_sum/a.count:null,
+        pooled_rmse:a.valid_s&&Number.isFinite(a.squared_error_s)?Math.sqrt(a.squared_error_s/a.valid_s):null,
+        case_count:a.count,valid_s:a.valid_s,candidate_s:a.candidate_s,
+        coverage:a.candidate_s?a.valid_s/a.candidate_s:null,unit:a.unit};
+      const groups=saved.ranking_groups.map(group=>group.filter(id=>keep.has(id))).filter(group=>group.length);
+      summary.ranked_cases=groups.reduce((count,group)=>count+group.length,0);
+      summary.best_ids=groups[0]||[];
+      const exempt=new Set(saved.worst_exempt_ids);
+      for(const id of groups.at(-1)||[])(exempt.has(id)?summary.suppressed_worst_ids:summary.worst_ids).push(id);
+      return summary;
     }
     const content=element('div');root.append(content);
     function render() {
@@ -127,7 +116,7 @@
       const means=table(['指标','case 平均 RMSE','整体 RMSE（按有效时长合并）','纳入 case 数']);
       means.body.id='overviewAverages';
       for(const key of metricKeys) {
-        const m=summary?.averages?.[key]||{},row=element('tr');row.dataset.metric=key;
+        const m=summary?.averages?.[key]||{unit:originalSummary.averages[key]?.unit},row=element('tr');row.dataset.metric=key;
         for(const value of [api.metricNames[key]||key,fmt(m.case_mean_rmse,4)+(m.unit?' '+m.unit:''),
           fmt(m.pooled_rmse,4)+(m.unit?' '+m.unit:''),(m.case_count||0)+' / '+cases.length])row.append(element('td',value));
         means.body.append(row);

@@ -1,10 +1,10 @@
 #include "track_insight/report.hpp"
+#include "publication_transaction.hpp"
 #include <algorithm>
 #include <iomanip>
 #include <sstream>
 #include <set>
 #include <chrono>
-#include <unistd.h>
 
 namespace track_insight {
 namespace fs=std::filesystem;
@@ -70,15 +70,20 @@ void validateReportOutput(const fs::path& output,bool replace) {
 int renderReport(Json analysis,const fs::path& requested,const fs::path& resources,bool replace,
                  const std::function<void(double)>& progress,const std::string& archive_name) {
   if(progress)progress(0);
-  validate(analysis);analysis["overview"]=makeOverview(analysis);const auto output=fs::absolute(requested).lexically_normal();
-  validateReportOutput(output,replace);fs::create_directories(output.parent_path());
-  const auto lock=output.string()+".track_insight.lock";
-  if(!fs::create_directory(lock))throw std::runtime_error("another generation holds the output lock");
-  const auto staging=output.string()+".track_insight.stage."+std::to_string(getpid());
-  const auto backup=output.string()+".track_insight.previous."+std::to_string(getpid());
-  if(fs::exists(staging)||fs::exists(backup)){fs::remove(lock);throw std::runtime_error("stale transaction path; choose a new output");}
-  fs::create_directory(staging);bool backed_up=false;
-  try {
+  validate(analysis);analysis["overview"]=makeOverview(analysis);
+  auto output=fs::absolute(requested).lexically_normal();
+  if(output!=output.root_path()&&output.filename().empty())output=output.parent_path();
+  output=fs::weakly_canonical(output.parent_path())/output.filename();
+  // Archive rounds must be published with their catalog and homepage, under the archive lock.
+  for(auto parent=output;!parent.empty();parent=parent.parent_path()) {
+    if(fs::exists(parent/".track_insight_archive"))
+      throw std::runtime_error("output is inside an archive; use --archive to update the round");
+    if(parent==parent.root_path())break;
+  }
+  PublicationTransaction transaction(output,false);
+  validateReportOutput(output,replace);const auto staging=transaction.stage()/"report";
+  fs::create_directory(staging);
+  {
     // Preserve complete source analysis for later re-rendering; filter all published views and metrics.
     const auto source_analysis=analysis.dump();
     excludeStraightPaths(analysis);
@@ -137,14 +142,8 @@ int renderReport(Json analysis,const fs::path& requested,const fs::path& resourc
     writeText(fs::path(staging)/".track_insight","Track Insight report v1\n");
     writeText(fs::path(staging)/"manifest.json",manifest.dump(2));
     if(progress)progress(.95);
-    if(fs::exists(output)){fs::rename(output,backup);backed_up=true;}
-    try{fs::rename(staging,output);}catch(...){if(backed_up){fs::rename(backup,output);backed_up=false;}throw;}
-    if(backed_up){fs::remove_all(backup);backed_up=false;}
-    fs::remove(lock);if(progress)progress(1);return partial?2:0;
-  }catch(...) {
-    std::error_code ec;fs::remove_all(staging,ec);
-    if(backed_up&&!fs::exists(output))fs::rename(backup,output,ec);
-    fs::remove(lock,ec);throw;
+    transaction.publish({{staging,output}},[&]{if(progress)progress(1);});
+    return partial?2:0;
   }
 }
 }

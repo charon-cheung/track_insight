@@ -66,14 +66,14 @@ RunData readBag(const std::filesystem::path& input,const std::filesystem::path& 
     const auto message=reader.read_next();Stamp s;s.record_ns=message->recv_timestamp;s.send_ns=message->send_timestamp;
     s.ns=s.record_ns;s.sequence=sequence++;s.source=message->topic_name;
     if(progress&&total&&sequence%1024==0)progress(.8*std::min(1.0,double(sequence)/total));
-    if(last_record&&s.record_ns<last_record-kSecond){++epoch;data.diagnostics.push_back({"record_clock_reset","Recording time moved backwards",s.source,s.record_ns});}
+    if(last_record&&s.record_ns<last_record-config.clock_reset_tolerance){++epoch;data.diagnostics.push_back({"record_clock_reset","Recording time moved backwards",s.source,s.record_ns});}
     last_record=s.record_ns;s.epoch=epoch;
     auto setHeader=[&](const builtin_interfaces::msg::Time& time){
       s.header_ns=stamp(time);s.ns=s.header_ns?s.header_ns:s.record_ns;s.clock_domain=s.header_ns?"message_header":"record_fallback";
       auto& previous=previous_header[s.source];
-      if(previous&&s.header_ns&&s.header_ns<previous-kSecond)clock_invalid.insert(s.source);
+      if(previous&&s.header_ns&&s.header_ns<previous-config.clock_reset_tolerance)clock_invalid.insert(s.source);
       previous=s.header_ns;
-      if(s.header_ns&&std::abs(s.header_ns-s.record_ns)>5*kSecond)clock_invalid.insert(s.source);
+      if(s.header_ns&&std::abs(s.header_ns-s.record_ns)>config.clock_domain_tolerance)clock_invalid.insert(s.source);
       if(clock_invalid.count(s.source)){s.valid=false;s.clock_domain="unverified"; }
     };
     try{
@@ -144,7 +144,7 @@ RunData readBag(const std::filesystem::path& input,const std::filesystem::path& 
   if(log.empty())data.diagnostics.push_back({"log_missing","No matching nav2.log supplied; execution windows are inferred","",0});
   else if(!std::filesystem::exists(log))data.diagnostics.push_back({"log_missing","Requested nav2.log is unavailable",log.string(),0});
   else {
-    data.log_path=std::filesystem::absolute(log).string();data.log_hash=hashInput(log);auto log_events=parseLog(data.log_path);
+    data.log_path=std::filesystem::absolute(log).string();data.log_hash=hashInput(log);auto log_events=parseLog(data.log_path,config);
     std::size_t overlap=0,anchors=0;
     for(const auto& e:log_events) {
       if(e.ns<data.start||e.ns>data.end)continue;
@@ -156,11 +156,11 @@ RunData readBag(const std::filesystem::path& input,const std::filesystem::path& 
       if(e.kind=="tracking_state"&&e.fields.count("robot_x")&&e.fields.count("robot_y"))try {
         const double x=std::stod(e.fields.at("robot_x")),y=std::stod(e.fields.at("robot_y"));
         auto p=std::lower_bound(data.poses.begin(),data.poses.end(),e.ns,[](const PoseSample& p,TimestampNs t){return p.stamp.ns<t;});
-        if(p!=data.poses.end()&&p->valid&&p->stamp.valid&&std::abs(p->stamp.ns-e.ns)<=100000000&&
-           std::hypot(p->pose.x-x,p->pose.y-y)<=0.10)++anchors;
+        if(p!=data.poses.end()&&p->valid&&p->stamp.valid&&std::abs(p->stamp.ns-e.ns)<=config.log_match_tolerance&&
+           std::hypot(p->pose.x-x,p->pose.y-y)<=config.log_pose_tolerance)++anchors;
       }catch(...){}
     }
-    data.log_compatible=anchors>=2;
+    data.log_compatible=anchors>=config.min_log_anchor_score;
     if(!data.log_compatible)data.diagnostics.push_back({overlap?"log_identity_unverified":"log_time_mismatch",
       overlap?"Time overlaps but no sufficient shared path or repeated pose evidence; log association disabled":
       "No parsed log events overlap the recording; log association disabled",log.string(),0});

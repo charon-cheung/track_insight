@@ -1,23 +1,14 @@
 #include "track_insight/archive.hpp"
 #include "track_insight/parameter_snapshot.hpp"
+#include "publication_transaction.hpp"
 #include <algorithm>
-#include <array>
 #include <regex>
 #include <set>
-#include <unistd.h>
 
 namespace track_insight {
 namespace fs=std::filesystem;
 namespace {
 constexpr auto marker="Track Insight archive v1\n";
-struct ArchiveLock {
-  fs::path path;
-  explicit ArchiveLock(const fs::path& root):path(root.string()+".track_insight.archive.lock") {
-    fs::create_directories(root.parent_path());
-    if(!fs::create_directory(path))throw std::runtime_error("another generation holds the archive lock");
-  }
-  ~ArchiveLock(){std::error_code ec;fs::remove(path,ec);}
-};
 bool hashValid(const std::string& value) {
   return value.size()==64&&value.find_first_not_of("0123456789abcdef")==std::string::npos;
 }
@@ -101,13 +92,15 @@ ArchiveResult renderArchive(Json analysis,const fs::path& requested,const fs::pa
   const std::optional<std::string>& name,const std::optional<std::string>& note,const std::function<void(double)>& progress) {
   auto root=fs::absolute(requested).lexically_normal();
   if(root!=root.root_path()&&root.filename().empty())root=root.parent_path();
+  root=fs::weakly_canonical(root.parent_path())/root.filename();
   if(root==root.root_path())throw std::runtime_error("invalid archive root");
   const auto hash=analysis.at("meta").at("input_sha256").get<std::string>();
   const auto start=analysis.at("meta").at("start_ns").get<std::string>();
   if(!hashValid(hash)||!std::regex_match(start,std::regex("-?[0-9]{1,19}")))throw std::runtime_error("invalid source identity for archive");
   std::stoll(start);
   if(name&&name->find_first_not_of(" \t\r\n")==std::string::npos)throw std::runtime_error("round name must not be empty");
-  ArchiveLock lock(root);auto catalog=loadCatalog(root);
+  PublicationTransaction transaction(root,true);auto catalog=loadCatalog(root);
+  const bool initialize=!fs::exists(root)||fs::is_empty(root);
   auto found=std::find_if(catalog["runs"].begin(),catalog["runs"].end(),[&](const Json& row){return row["source_sha256"]==hash;});
   const bool exists=found!=catalog["runs"].end();
   if(exists&&!replace)throw std::runtime_error("round already exists; use --replace to update only this round");
@@ -122,13 +115,8 @@ ArchiveResult renderArchive(Json analysis,const fs::path& requested,const fs::pa
     note.value_or(exists?found->at("note").get<std::string>():""));
   // Validate the published destination before staging, including user-added files.
   validateReportOutput(output,replace);
-  const auto stage=fs::path(root.string()+".archive.stage."+std::to_string(getpid()));
-  if(fs::exists(stage)||fs::is_symlink(stage))throw std::runtime_error("stale archive transaction; choose a new archive");
-  fs::create_directory(stage);
-  std::array<bool,3> backed{},published{};
-  const std::array<fs::path,3> targets{output,root/"runs.json",root/"index.html"};
-  const std::array<fs::path,3> sources{stage/"round",stage/"runs.json",stage/"index.html"};
-  try {
+  const auto stage=transaction.stage();
+  {
     const int code=renderReport(std::move(analysis),stage/"round",resources,false,
       [&](double fraction){if(progress)progress(.95*fraction);},row["name"].get<std::string>());
     const auto manifest=Json::parse(readText(stage/"round"/"manifest.json"));
@@ -139,27 +127,15 @@ ArchiveResult renderArchive(Json analysis,const fs::path& requested,const fs::pa
       return x!=y?x>y:a["id"].get<std::string>()<b["id"].get<std::string>();
     });
     writeText(stage/"runs.json",catalog.dump(2));writeText(stage/"index.html",homepage(catalog,resources));
-    fs::create_directories(root/"runs");
-    if(!fs::exists(root/".track_insight_archive"))writeText(root/".track_insight_archive",marker);
-    // Publish completed artifacts only. Ordinary failures restore all three previous targets.
-    for(std::size_t i=0;i<targets.size();++i) {
-      if(fs::exists(targets[i])){fs::rename(targets[i],stage/("previous_"+std::to_string(i)));backed[i]=true;}
-      fs::rename(sources[i],targets[i]);published[i]=true;
-    }
-    if(progress)progress(1);
-    std::error_code ec;fs::remove_all(stage,ec);
+    std::vector<PublicationTransaction::Entry> entries;
+    if(initialize) {
+      const auto prepared=stage/"archive";fs::create_directories(prepared/"runs");
+      fs::rename(stage/"round",prepared/"runs"/id);
+      fs::rename(stage/"runs.json",prepared/"runs.json");fs::rename(stage/"index.html",prepared/"index.html");
+      writeText(prepared/".track_insight_archive",marker);entries={{prepared,root}};
+    }else entries={{stage/"round",output},{stage/"runs.json",root/"runs.json"},{stage/"index.html",root/"index.html"}};
+    transaction.publish(entries,[&]{if(progress)progress(1);});
     return {code,output/"report.html",root/"index.html"};
-  }catch(...) {
-    bool restored=true;
-    for(int i=2;i>=0;--i) {
-      std::error_code ec;
-      if(published[i])fs::remove_all(targets[i],ec);
-      if(!ec&&backed[i])fs::rename(stage/("previous_"+std::to_string(i)),targets[i],ec);
-      if(ec)restored=false;
-    }
-    if(restored){std::error_code ec;fs::remove_all(stage,ec);}
-    else throw std::runtime_error("archive rollback incomplete; preserved recovery files in "+stage.string());
-    throw;
   }
 }
 }

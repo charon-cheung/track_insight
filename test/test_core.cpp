@@ -312,3 +312,29 @@ TEST(Correlation, ReplacementAndUnsuccessfulResultsRemainBounded) {
     EXPECT_EQ(tasks[1].outcome,outcome);EXPECT_EQ(tasks[1].end,4*kSecond);
   }
 }
+
+TEST(Tracking, ConfiguredBacktrackAndBranchTolerancesAffectProjectionValidity) {
+  Plan plan;plan.poses={{0,0,0},{1,0,0}};RunData data;Interval interval;interval.end=kSecond;
+  PoseSample pose;pose.pose={.5,0,0};data.poses.push_back(pose);
+  pose.stamp.ns=100000000;pose.pose.x=.3;data.poses.push_back(pose);
+  EXPECT_FALSE(matchTracking(plan,data,interval,Config{})[1].valid);
+  Config c;c.progress_backtrack=.25;
+  EXPECT_TRUE(matchTracking(plan,data,interval,c)[1].valid);
+  plan.poses={{0,0,0},{1,0,0},{1,.015,0},{0,.015,0}};
+  data.poses.resize(1);data.poses[0].pose={.5,.004,0};
+  EXPECT_FALSE(matchTracking(plan,data,interval,Config{})[0].valid);
+  c=Config{};c.branch_distance_tolerance=.005;
+  EXPECT_TRUE(matchTracking(plan,data,interval,c)[0].valid);
+  c=Config{};c.branch_progress_separation=2;
+  EXPECT_TRUE(matchTracking(plan,data,interval,c)[0].valid);
+}
+TEST(Correlation, ConfiguredLogToleranceMatchesGoalsWithoutResolvingAmbiguity) {
+  RunData data;data.start=kSecond;data.end=3*kSecond;data.log_compatible=true;
+  data.events={{kSecond,0,0,"navigation_start","navigation","","bag_action_status",{{"uuid","a"}}},
+    {1150000000,1,0,"navigation_start","navigation","","log",{{"goal_x","1"},{"goal_y","2"}}}};
+  EXPECT_FALSE(navigationTasks(data)[0].goal);
+  Config c;c.log_match_tolerance=150000000;
+  ASSERT_TRUE(navigationTasks(data,c)[0].goal);EXPECT_DOUBLE_EQ(navigationTasks(data,c)[0].goal->x,1);
+  EXPECT_TRUE(evaluate(data,c).tasks[0].goal);
+  data.events.push_back(data.events.back());EXPECT_FALSE(navigationTasks(data,c)[0].goal);
+}

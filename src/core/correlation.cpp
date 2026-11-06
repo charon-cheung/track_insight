@@ -4,7 +4,7 @@
 #include <set>
 
 namespace track_insight {
-std::vector<Task> navigationTasks(const RunData& data) {
+std::vector<Task> navigationTasks(const RunData& data,const Config& config) {
   std::vector<Task> tasks;std::vector<int> sessions;
   const bool action_lifecycle=std::any_of(data.events.begin(),data.events.end(),[](const LogEvent& e){
     return e.source=="bag_action_status"&&e.kind=="navigation_start";});
@@ -41,7 +41,7 @@ std::vector<Task> navigationTasks(const RunData& data) {
   if(action_lifecycle&&data.log_compatible)for(auto& task:tasks) {
     std::vector<const LogEvent*> matches;
     for(const auto& e:data.events)if(e.source!="bag_action_status"&&e.kind=="navigation_start"&&
-      std::abs(e.ns-task.start)<=100000000&&e.fields.count("goal_x")&&e.fields.count("goal_y"))matches.push_back(&e);
+      std::abs(e.ns-task.start)<=config.log_match_tolerance&&e.fields.count("goal_x")&&e.fields.count("goal_y"))matches.push_back(&e);
     if(matches.size()==1)try {
       const auto& e=*matches.front();const double x=std::stod(e.fields.at("goal_x")),y=std::stod(e.fields.at("goal_y"));
       if(std::isfinite(x)&&std::isfinite(y)){task.goal=Pose{x,y,0};task.evidence_lines.push_back(e.line);}

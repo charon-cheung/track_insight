@@ -84,7 +84,7 @@ void addFindings(PathResult& path,const Cells& values,const Config& config) {
 }
 }
 Evaluation evaluate(const RunData& data,const Config& config) {
-  Evaluation result;result.tasks=navigationTasks(data);
+  Evaluation result;result.tasks=navigationTasks(data,config);
   std::map<std::string,Cells> navigation;
   for(const auto& publication:executionIntervals(data,result.tasks)) {
     const auto interval=motionWindow(data,publication,config);

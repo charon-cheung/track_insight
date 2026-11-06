@@ -20,7 +20,7 @@ void TfHistory::finish(){
   std::map<std::pair<int,std::string>,TimestampNs> previous_header;
   for(const auto& r:records_)if(!r.fixed) {
     const auto ns=stamp(r.transform.header.stamp);auto& previous=previous_header[{r.epoch,r.transform.child_frame_id}];
-    if(previous&&ns<previous-kSecond)clock_resets_.insert(r.transform.child_frame_id);
+    if(previous&&ns<previous-config_.clock_reset_tolerance)clock_resets_.insert(r.transform.child_frame_id);
     previous=ns;
   }
   std::set<int> epochs{0};for(const auto& r:records_)epochs.insert(r.epoch);
@@ -82,7 +82,7 @@ std::vector<PoseSample> TfHistory::poses(){
     const auto& source=provenance.at(point);
     sample.stamp.record_ns=source.record_ns;sample.stamp.send_ns=source.send_ns;
     sample.stamp.sequence=source.sequence;
-    if(source.record_ns&&std::abs(point.second-source.record_ns)>5*kSecond) {
+    if(source.record_ns&&std::abs(point.second-source.record_ns)>config_.clock_domain_tolerance) {
       sample.valid=false;sample.stamp.valid=false;sample.reason="tf_clock_domain_unverified";
     }
     result.push_back(sample);

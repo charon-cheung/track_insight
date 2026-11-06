@@ -30,6 +30,11 @@ bool snapshotAvailable(const Json& snapshot) {
 }
 Json readPidParameters(const Json& analysis) {
   const auto& meta=analysis.at("meta");
+  const auto config=analysis.value("config",Json::object());
+  const auto saved=config.value("clock_reset_tolerance_ns",std::to_string(Config{}.clock_reset_tolerance));
+  std::size_t consumed=0;const auto reset_tolerance=std::stoll(saved,&consumed);
+  if(consumed!=saved.size()||reset_tolerance<0||reset_tolerance>60*kSecond)
+    throw std::invalid_argument("invalid saved clock reset tolerance");
   const auto source=meta.value("log_path","");
   auto unknown=[&](const std::string& reason)->Json {
     return {{"schema_version",2},{"source_kind","navigation_log"},{"status","unknown"},
@@ -50,7 +55,7 @@ Json readPidParameters(const Json& analysis) {
   TimestampNs last=0;
   for(std::size_t i=0;i<events.size();++i) {
     const auto ns=std::stoll(events[i]->at("ns").get<std::string>());
-    const bool reset=i&&ns<last-kSecond;
+    const bool reset=i&&ns<last-reset_tolerance;
     if(reset&&((last>=start&&last<=end)||(ns>=start&&ns<=end)))
       return unknown("测试区间内存在时钟回退，无法唯一匹配启动记录。");
     if(i==0||reset)epochs.push_back({i,i,ns,ns});
@@ -75,7 +80,7 @@ Json readPidParameters(const Json& analysis) {
   bool active=false,valid=false,complete=false,changed_during_test=false;
   for(const auto* pointer:events) {
     const auto& event=*pointer;const auto ns=std::stoll(event.at("ns").get<std::string>());
-    if(previous&&ns<previous-kSecond)return unknown("日志存在时钟回退，无法唯一匹配启动记录。");
+    if(previous&&ns<previous-reset_tolerance)return unknown("日志存在时钟回退，无法唯一匹配启动记录。");
     previous=ns;
     const auto raw=event.at("raw").get<std::string>();std::smatch match;
     const bool is_begin=raw.find("PID_LOG parameter_snapshot_begin")!=std::string::npos;

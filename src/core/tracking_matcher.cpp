@@ -61,7 +61,7 @@ std::vector<TrackingSample> matchTracking(const Plan& plan,const RunData& data,
       if(length<1e-9) continue;
       const double fraction=std::clamp(((pose.pose.x-a.x)*dx+(pose.pose.y-a.y)*dy)/(length*length),0.0,1.0);
       const double s=arc[j]+fraction*length;
-      if(previous && (s<*previous-0.15 || s>*previous+config.progress_window)) continue;
+      if(previous && (s<*previous-config.progress_backtrack || s>*previous+config.progress_window)) continue;
       Pose projected{a.x+fraction*dx,a.y+fraction*dy,0};
       candidates.push_back({projected,s,(dx*(pose.pose.y-a.y)-dy*(pose.pose.x-a.x))/length,
         std::hypot(projected.x-pose.pose.x,projected.y-pose.pose.y),j});
@@ -73,8 +73,8 @@ std::vector<TrackingSample> matchTracking(const Plan& plan,const RunData& data,
     else {
       const auto& best=candidates.front(); bool ambiguous=false;
       for(std::size_t j=1;j<candidates.size();++j) {
-        if(candidates[j].distance>best.distance+0.01) break;
-        if(std::abs(candidates[j].s-best.s)>0.25) ambiguous=true;
+        if(candidates[j].distance>best.distance+config.branch_distance_tolerance) break;
+        if(std::abs(candidates[j].s-best.s)>config.branch_progress_separation) ambiguous=true;
       }
       if(ambiguous) sample.reason="ambiguous_path_branch";
       else {

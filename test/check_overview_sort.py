@@ -8,15 +8,16 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 DOM = '''<div id="reportOverview"></div><div id="navigation"></div>
 <button id="overviewNavigation"></button><button id="play">播放</button>
-<button id="downloadMetrics"></button><pre id="result">PENDING</pre>'''
+<span id="runTime">fixture</span><button id="downloadMetrics"></button><pre id="result">PENDING</pre>'''
 SETUP = '''
 const cases=[
  {id:'E1',v:[.0204,.3,.4]}, {id:'E2',v:[.02,.04,.2]},
  {id:'E3',v:[null,NaN,Infinity]}, {id:'E4',v:[.02,.06,.12]},
  {id:'E5',v:[0,0,0]}, {id:'E6',v:[]}];
-window.trackInsight={metricNames:{},analysis:{
+window.trackInsight={metricNames:{},isCaseDeleted:()=>false,analysis:{meta:{},
  paths:cases.map(c=>({interval:{id:c.id,plan_id:c.id},metrics:c.v.length?{lateral:{rmse:c.v[0],p95:c.v[1],max:c.v[2]}}:{}})),
  overview:{case_ids:cases.map(c=>c.id),best_ids:['E5'],worst_ids:['E1'],averages:{},ranked_cases:4}}};
+document.getElementById('downloadMetrics').onclick=()=>{};
 let navigated=null;
 for(const c of cases){const b=document.createElement('button');b.dataset.key=c.id;b.onclick=()=>{navigated=c.id;};document.getElementById('navigation').append(b);}
 '''

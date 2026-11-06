@@ -65,3 +65,17 @@ TEST(Tf, HeaderResetWithMonotonicRecordTimeCannotMergeEpochs) {
   tf.add(transform(2,"map","base",1),false,0,s);tf.finish();EXPECT_TRUE(tf.hasClockReset());
   for(const auto& p:tf.poses())EXPECT_FALSE(p.valid);
 }
+
+TEST(Tf, ConfiguredClockLimitsControlDiscrepancyAndReset) {
+  Config c;c.base="base";Stamp source;source.record_ns=3*kSecond;
+  auto discrepancy=[&](const Config& config){TfHistory tf(config,10*kSecond);
+    tf.add(transform(1,"map","base",0),false,0,source);tf.finish();return tf.poses();};
+  EXPECT_TRUE(discrepancy(c)[0].valid);
+  c.clock_domain_tolerance=2*kSecond;EXPECT_TRUE(discrepancy(c)[0].valid);
+  c.clock_domain_tolerance=2*kSecond-1;EXPECT_FALSE(discrepancy(c)[0].valid);
+  auto reset=[&](const Config& config){TfHistory tf(config,10*kSecond);
+    tf.add(transform(2,"map","base",0),false,0);tf.add(transform(1.5,"map","base",0),false,0);
+    tf.finish();return tf.hasClockReset();};
+  EXPECT_FALSE(reset(c));c.clock_reset_tolerance=500000000;EXPECT_FALSE(reset(c));
+  c.clock_reset_tolerance=499999999;EXPECT_TRUE(reset(c));
+}

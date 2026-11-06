@@ -128,6 +128,10 @@ struct Config {
   std::string feedback_topic{"/dev/odometry/raw/dist"}, downstream_topic{"/ctrl/velocity/navi/clct"};
   std::string frame{"map"}, base{"rbs_base_link"}, command_frame{"rbs_base_link"};
   TimestampNs tf_gap{200000000}, velocity_gap{200000000}, command_age{200000000}, log_age{100000000};
+  TimestampNs log_match_tolerance{100000000}, clock_reset_tolerance{kSecond}, clock_domain_tolerance{5*kSecond};
+  double progress_backtrack{0.15}, branch_distance_tolerance{0.01}, branch_progress_separation{0.25};
+  double log_pose_tolerance{0.10}, worst_case_p95_limit{0.05}, worst_case_max_limit{0.055};
+  std::size_t min_log_anchor_score{2};
   double max_position_jump_speed{5.0}, jump_distance{0.15}, progress_window{2.0};
   double stopped_linear{0.02}, stopped_angular{0.03}, settle_duration{1.0};
   std::optional<double> lateral_threshold, velocity_threshold, angular_velocity_threshold, terminal_tolerance;
@@ -144,8 +148,8 @@ DisplayClock captureDisplayClock(TimestampNs start, TimestampNs end, bool wall_c
 std::string formatTimestamp(TimestampNs ns, const DisplayClock& clock, bool full = true);
 Metric summarize(const std::vector<WeightedSample>& samples, const Interval& interval,
   const std::string& unit, std::optional<double> threshold = std::nullopt);
-std::vector<LogEvent> parseLog(const std::filesystem::path& path);
-std::vector<Task> navigationTasks(const RunData& data);
+std::vector<LogEvent> parseLog(const std::filesystem::path& path, const Config& config = {});
+std::vector<Task> navigationTasks(const RunData& data, const Config& config = {});
 std::vector<Interval> executionIntervals(const RunData& data, const std::vector<Task>& tasks);
 Interval motionWindow(const RunData& data, Interval interval, const Config& config);
 std::vector<TrackingSample> matchTracking(const Plan& plan, const RunData& data,

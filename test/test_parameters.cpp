@@ -108,3 +108,12 @@ TEST_F(Parameters, ImmediateEarlierRoundIsBaselineAndRerenderKeepsItFrozen) {
   EXPECT_EQ(analysis["pid_parameters"]["comparison"]["status"],"no_previous_round");
   analysis.erase("pid_parameters");const auto legacy=analysis;attachPidParameterBaseline(analysis,runs);EXPECT_EQ(analysis,legacy);
 }
+
+TEST_F(Parameters, SavedClockToleranceControlsSnapshotEpochs) {
+  auto a=analysis(block(30)+line(29,"PID_LOG tracking_state"));
+  EXPECT_EQ(readPidParameters(a)["status"],"available"); // Exactly 1 s is allowed by the legacy default.
+  a["config"]["clock_reset_tolerance_ns"]="100000000";
+  EXPECT_EQ(readPidParameters(a)["status"],"unknown");
+  a["config"]["clock_reset_tolerance_ns"]="2000000000";
+  EXPECT_EQ(readPidParameters(a)["status"],"available");
+}

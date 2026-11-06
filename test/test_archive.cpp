@@ -2,6 +2,8 @@
 #include <gtest/gtest.h>
 #include <unistd.h>
 #include <algorithm>
+#include <csignal>
+#include <sys/wait.h>
 
 using namespace track_insight;
 namespace fs=std::filesystem;
@@ -57,6 +59,7 @@ TEST_F(ArchiveTest, InvalidGenerationAndConcurrentWriterLeavePublishedFilesUntou
   auto broken=analysis();broken["paths"][0]["tracking"].push_back(Json::array({1}));
   EXPECT_THROW(render(broken,true),std::runtime_error);
   EXPECT_EQ(readText(first.home),home);EXPECT_EQ(readText(first.report),report);EXPECT_EQ(readText(archive/"runs.json"),index);
+  fs::remove(archive.string()+".track_insight.archive.lock");
   fs::create_directory(archive.string()+".track_insight.archive.lock");
   EXPECT_THROW(render(analysis('b')),std::runtime_error);EXPECT_EQ(readText(first.home),home);
   fs::remove(archive.string()+".track_insight.archive.lock");
@@ -141,4 +144,57 @@ TEST_F(ArchiveTest, ParameterSnapshotsAndComparisonSurviveRerenderWithoutNestedH
   for(const auto& row:snapshots["runs"])EXPECT_FALSE(row["pid_parameters"].contains("comparison"));
   first["pid_parameters"]["values"]["kp_x"]=99;render(first,true);render(saved,true);
   EXPECT_EQ(Json::parse(readText(two.report.parent_path()/"analysis.json"))["pid_parameters"],saved["pid_parameters"]);
+}
+
+TEST_F(ArchiveTest, KilledGenerationAndPublicationRecoverBeforeCatalogValidation) {
+  const auto first=render(analysis());
+  const auto report=readText(first.report),home=readText(first.home),index=readText(archive/"runs.json");
+  for(bool replacement:{false,true})for(double cutoff:{.9,1.0}) {
+    const auto pid=fork();ASSERT_GE(pid,0);
+    if(pid==0) {
+      try {renderArchive(analysis(replacement?'a':'b'),archive,TRACK_INSIGHT_RESOURCES,replacement,"new",{},
+        [cutoff](double p){if(p>=cutoff)raise(SIGKILL);});}catch(...){_exit(91);}_exit(92);
+    }
+    int status=0;ASSERT_EQ(waitpid(pid,&status,0),pid);ASSERT_TRUE(WIFSIGNALED(status));ASSERT_EQ(WTERMSIG(status),SIGKILL);
+    // Same-round refusal still performs recovery, without generating another report.
+    EXPECT_THROW(render(analysis()),std::runtime_error);
+    EXPECT_EQ(readText(first.report),report);EXPECT_EQ(readText(first.home),home);EXPECT_EQ(readText(archive/"runs.json"),index);
+    EXPECT_EQ(std::distance(fs::directory_iterator(archive/"runs"),fs::directory_iterator{}),1);
+  }
+  EXPECT_EQ(render(analysis('b')).code,0);EXPECT_EQ(catalog()["runs"].size(),2);
+}
+TEST_F(ArchiveTest, FirstPublicationInterruptedLeavesNoPartialArchive) {
+  for(double cutoff:{.9,1.0}) {
+    archive=root/(cutoff==1?"initial_publish":"initial_generate");
+    const auto pid=fork();ASSERT_GE(pid,0);
+    if(pid==0){try{renderArchive(analysis(),archive,TRACK_INSIGHT_RESOURCES,false,{},{},
+      [cutoff](double p){if(p>=cutoff)raise(SIGKILL);});}catch(...){_exit(91);}_exit(92);}
+    int status=0;ASSERT_EQ(waitpid(pid,&status,0),pid);ASSERT_TRUE(WIFSIGNALED(status));
+    const auto result=render(analysis());EXPECT_EQ(result.code,0);EXPECT_EQ(catalog()["runs"].size(),1);
+  }
+}
+
+TEST_F(ArchiveTest, StandaloneRenderInsideArchiveDoesNotLeaveUnmanagedLockFiles) {
+  const auto first=render(analysis());const auto report=readText(first.report),home=readText(first.home);
+  for(const auto& output:{archive,archive/"runs",first.report.parent_path(),first.report.parent_path()/"nested"}) {
+    for(bool replace:{false,true})EXPECT_THROW(renderReport(analysis(),output,TRACK_INSIGHT_RESOURCES,replace),std::runtime_error);
+    EXPECT_FALSE(fs::exists(output.string()+".track_insight.lock"));
+  }
+  const auto alias=root/"alias";fs::create_directory_symlink(archive/"runs",alias);
+  EXPECT_THROW(renderReport(analysis(),alias/first.report.parent_path().filename(),TRACK_INSIGHT_RESOURCES,true),std::runtime_error);
+  EXPECT_FALSE(fs::exists(first.report.parent_path().string()+".track_insight.lock"));
+  EXPECT_EQ(readText(first.report),report);EXPECT_EQ(readText(first.home),home);
+  EXPECT_EQ(render(analysis(),true).code,0);EXPECT_EQ(render(analysis('b')).code,0);
+}
+
+TEST_F(ArchiveTest, ParentAliasesUseTheSameLockAndRecoveryIdentity) {
+  const auto alias=root/"parent_alias";fs::create_directory_symlink(root,alias);
+  const auto first=render(analysis());const auto report=readText(first.report),home=readText(first.home);
+  const auto pid=fork();ASSERT_GE(pid,0);
+  if(pid==0){try{renderArchive(analysis('b'),alias/"history",TRACK_INSIGHT_RESOURCES,false,{},{},
+    [](double p){if(p==1)raise(SIGKILL);});}catch(...){_exit(91);}_exit(92);}
+  int status=0;ASSERT_EQ(waitpid(pid,&status,0),pid);ASSERT_TRUE(WIFSIGNALED(status));ASSERT_EQ(WTERMSIG(status),SIGKILL);
+  EXPECT_THROW(render(analysis()),std::runtime_error);
+  EXPECT_EQ(readText(first.report),report);EXPECT_EQ(readText(first.home),home);
+  EXPECT_EQ(renderArchive(analysis('b'),alias/"history",TRACK_INSIGHT_RESOURCES,false).code,0);
 }

@@ -4,7 +4,7 @@
 #include <stdexcept>
 
 namespace track_insight {
-std::vector<LogEvent> parseLog(const std::filesystem::path& path) {
+std::vector<LogEvent> parseLog(const std::filesystem::path& path,const Config& config) {
   std::ifstream input(path);if(!input)throw std::runtime_error("cannot read log: "+path.string());
   const std::regex ansi("\x1b\\[[0-9;]*[A-Za-z]");
   const std::regex timestamp(R"(\[([0-9]+\.[0-9]+)\])");
@@ -16,7 +16,7 @@ std::vector<LogEvent> parseLog(const std::filesystem::path& path) {
     ++number;line=std::regex_replace(line,ansi,"");std::smatch match;
     if(!std::regex_search(line,match,timestamp))continue;
     LogEvent event;try{event.ns=parseTimestampNs(match[1].str());}catch(...){continue;}
-    if(previous&&event.ns<previous-kSecond){++session;++navigation_session;revision.reset();}
+    if(previous&&event.ns<previous-config.clock_reset_tolerance){++session;++navigation_session;revision.reset();}
     previous=event.ns;event.line=number;event.raw=line;event.source=path.string();
     for(auto it=std::sregex_iterator(line.begin(),line.end(),field);it!=std::sregex_iterator();++it)
       event.fields[(*it)[1].str()]=(*it)[2].str();

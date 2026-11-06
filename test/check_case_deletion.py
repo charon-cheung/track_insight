@@ -53,6 +53,7 @@ async def main():
                 original=await js('({overview:trackInsight.analysis.overview,paths:trackInsight.analysis.paths.map(p=>({interval:p.interval,metrics:p.metrics}))})')
                 paths={p['interval']['id']:p for p in original['paths']}
                 case_ids=original['overview']['case_ids']
+                limits=original['overview']['worst_case_limits']
                 assert len(case_ids)>=3,'Use a report with at least three cases'
                 fields=['lateral','path_distance','yaw_error','vx_residual','vy_residual','omega_residual','speed_vector_residual']
                 deleted=set()
@@ -69,7 +70,7 @@ async def main():
                         if name=='worst':
                             def passes(k):
                                 m=paths[k]['metrics']['lateral']
-                                return all(isinstance(m.get(f),(int,float)) and 0<=m[f]<=limit for f,limit in [('p95',.05),('max',.055)])
+                                return all(isinstance(m.get(f),(int,float)) and 0<=m[f]<=limit for f,limit in [('p95',limits['p95_m']),('max',limits['max_m'])])
                             expected=[k for k in expected if not passes(k)]
                         assert set(actual[name])==set(expected),(name,actual[name],expected)
                     for f in fields:
@@ -117,18 +118,7 @@ async def main():
                 await js("document.getElementById('restoreAllHidden').click()")
                 deleted.clear()
                 await verify()
-                # Ties, missing RMSE, zero valid duration and negative RMSE.
-                if len(case_ids)>=6:
-                    fixture={k:{'rmse':r,'valid_s':w,'p95':.06,'max':.07} for k,r,w in zip(case_ids[:5],[.02,.02,None,.2,-1],[1,3,2,0,2])}
-                    await js("(()=>{const fixture="+json.dumps(fixture)+";for(const p of trackInsight.analysis.paths)if(fixture[p.interval.id])Object.assign(p.metrics.lateral,fixture[p.interval.id]);})()")
-                    original=await js('({overview:trackInsight.analysis.overview,paths:trackInsight.analysis.paths.map(p=>({interval:p.interval,metrics:p.metrics}))})')
-                    paths={p['interval']['id']:p for p in original['paths']}
-                    deleted=set(case_ids[5:])
-                    await js("(async()=>{const m=trackInsight.analysis.meta,input=document.getElementById('reviewRecordsFile'),data=new DataTransfer(),record={schema_version:3,type:'track_insight_review_records',source:{input_sha256:m.input_sha256,start_ns:m.start_ns,end_ns:m.end_ns},favorites:{red:[],black:[]},hidden:"+json.dumps(list(deleted))+",issues:{}};data.items.add(new File([JSON.stringify(record)],'records.json'));input.files=data.files;await input.onchange();})()")
-                    await verify()
-                    assert set(await js("[...document.querySelectorAll('#overviewCases .overviewBest.overviewWorst')].map(r=>r.dataset.case)"))==set(case_ids[:2])
-                    await delete(case_ids[1])
-                    await delete(case_ids[0])
+                # Synthetic invalid/tied metrics are checked against C++ in check_overview_contract.py.
                 # A navigation with multiple paths: remove one child, then the whole group.
                 await call('Page.enable')
                 await call('Page.addScriptToEvaluateOnNewDocument',{'source':"const parse=JSON.parse;JSON.parse=function(...args){const a=parse(...args);if(a?.paths&&a?.tasks&&a?.overview){const ids=new Set(a.overview.case_ids),p=a.paths.filter(p=>ids.has(p.interval.id));if(p.length>1)p[1].interval.navigation_id=p[0].interval.navigation_id;}return a;};"})
@@ -149,7 +139,7 @@ async def main():
                 await reload()
                 await verify()
                 assert not errors,errors
-                print('PASS: delete best/worst; both modes and star pickers; weighted averages; reload; CSV; empty and restore; ties/invalid metrics; grouped navigation; original metrics/PID retained')
+                print('PASS: delete best/worst; both modes and star pickers; weighted averages; reload; CSV; empty and restore; grouped navigation; original metrics/PID retained')
                 await call('Browser.close')
                 chrome.wait(timeout=10)
         finally:

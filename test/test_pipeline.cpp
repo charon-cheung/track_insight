@@ -19,7 +19,7 @@ namespace {
 struct Fixture {
   std::filesystem::path root,bag,log;
   TimestampNs origin{1792655909000000000LL};
-  Fixture(bool with_tracking_raw=false,bool stamped=true,bool with_downstream=false,bool curved=false) {
+  Fixture(bool with_tracking_raw=false,bool stamped=true,bool with_downstream=false,bool curved=false,TimestampNs feedback_offset=0,TimestampNs feedback_reset=0) {
     auto name=(std::filesystem::temp_directory_path()/"track_insight_fixture_XXXXXX").string();
     std::vector<char> chars(name.begin(),name.end());chars.push_back(0);root=mkdtemp(chars.data());
     bag=root/"bag";log=root/"nav2.log";
@@ -55,7 +55,7 @@ struct Fixture {
         if(stamped)writer.write(output,"/ctrl/velocity/navi/clct",time);
         else writer.write(output.twist,"/ctrl/velocity/navi/clct",time);
       }
-      nav_msgs::msg::Odometry odom;odom.header.stamp=time;odom.header.frame_id="odom";odom.child_frame_id="rbs_base_link";
+      nav_msgs::msg::Odometry odom;odom.header.stamp=rclcpp::Time(ns-feedback_offset-(j>=20?feedback_reset:0));odom.header.frame_id="odom";odom.child_frame_id="rbs_base_link";
       odom.twist.twist.linear.x=j<20?.08:0;writer.write(odom,"/dev/odometry/raw/dist",time);
     }
     writer.close();
@@ -304,4 +304,62 @@ TEST(Report, StraightOnlyReportIsEmptyButSavedAnalysisRetainsOriginalCases) {
   ASSERT_NE(start,std::string::npos);const auto data_start=html.find('>',start)+1;
   const auto embedded=Json::parse(html.substr(data_start,html.find("</script>",data_start)-data_start));
   EXPECT_TRUE(embedded["paths"].empty());EXPECT_TRUE(embedded["plans"].empty());EXPECT_TRUE(embedded["tasks"].empty());
+}
+
+TEST(Config, DefaultYamlPreservesAnalysisAndCustomValuesAreSaved) {
+  Fixture f;const Config defaults;
+  const auto yaml=loadConfig(std::filesystem::path(TRACK_INSIGHT_RESOURCES).parent_path()/"config/default.yaml");
+  const auto data=readBag(f.bag,f.log,defaults),configured=readBag(f.bag,f.log,yaml);
+  const auto clock=captureDisplayClock(data.start,data.end,true);
+  EXPECT_EQ(makeAnalysis(data,evaluate(data,defaults),defaults,clock),makeAnalysis(configured,evaluate(configured,yaml),yaml,clock));
+  const auto file=f.root/"thresholds.yaml";
+  writeText(file,"timing:\n  log_match_tolerance_ms: 150\n  clock_reset_tolerance_ms: 200\n  clock_domain_tolerance_ms: 3000\n"
+    "geometry:\n  progress_backtrack_m: 0.2\n  branch_distance_tolerance_m: 0.02\n  branch_progress_separation_m: 0.3\n"
+    "log_matching:\n  pose_tolerance_m: 0.2\n  min_anchor_score: 3\nreport:\n  worst_case_p95_limit_m: 0.08\n  worst_case_max_limit_m: 0.09\n");
+  const auto c=loadConfig(file);const auto a=makeAnalysis(data,evaluate(data,c),c,clock);const auto& saved=a["config"];
+  EXPECT_EQ(saved["log_match_tolerance_ns"],"150000000");EXPECT_EQ(saved["clock_reset_tolerance_ns"],"200000000");
+  EXPECT_EQ(saved["clock_domain_tolerance_ns"],"3000000000");EXPECT_EQ(saved["progress_backtrack_m"],.2);
+  EXPECT_EQ(saved["branch_distance_tolerance_m"],.02);EXPECT_EQ(saved["branch_progress_separation_m"],.3);
+  EXPECT_EQ(saved["log_matching"],(Json{{"pose_tolerance_m",.2},{"min_anchor_score",3}}));
+  EXPECT_EQ(a["overview"]["worst_case_limits"],(Json{{"p95_m",.08},{"max_m",.09}}));
+  writeText(file,"{}");EXPECT_EQ(makeOverview(a),makeOverview(Json::parse(a.dump())));
+}
+TEST(Config, NewThresholdsRejectInvalidInputAndAllowStrictZeroTolerances) {
+  Fixture f;const auto file=f.root/"config.yaml";
+  const std::vector<std::pair<std::string,std::string>> keys={
+    {"timing","log_match_tolerance_ms"},{"timing","clock_reset_tolerance_ms"},{"timing","clock_domain_tolerance_ms"},
+    {"geometry","progress_backtrack_m"},{"geometry","branch_distance_tolerance_m"},{"geometry","branch_progress_separation_m"},
+    {"log_matching","pose_tolerance_m"},{"report","worst_case_p95_limit_m"},{"report","worst_case_max_limit_m"}};
+  for(const auto& [group,key]:keys) {
+    SCOPED_TRACE(group+"."+key);
+    for(const auto* invalid:{"-1",".nan",".inf","1e300"}) {
+      writeText(file,group+":\n  "+key+": "+invalid+"\n");EXPECT_THROW(loadConfig(file),std::exception);
+    }
+    writeText(file,group+":\n  "+key+": 0\n");EXPECT_NO_THROW(loadConfig(file));
+  }
+  for(const auto* invalid:{"0","-1","1.5",".nan","1000001","999999999999999999999999"}) {
+    writeText(file,std::string("log_matching:\n  min_anchor_score: ")+invalid+"\n");EXPECT_THROW(loadConfig(file),std::exception);
+  }
+}
+TEST(Pipeline, ConfiguredAssociationUsesTimeDistanceAndAnchorScore) {
+  Fixture f;Config c;
+  c.min_log_anchor_score=3;EXPECT_FALSE(readBag(f.bag,f.log,c).log_compatible);
+  writeText(f.log,"[controller] [1792655909.150000000] PID_LOG tracking_state robot_x=0.02 robot_y=0.21\n"
+    "[controller] [1792655909.250000000] PID_LOG tracking_state robot_x=0.03 robot_y=0.21\n");
+  c=Config{};EXPECT_FALSE(readBag(f.bag,f.log,c).log_compatible);
+  c.log_pose_tolerance=.12;c.log_match_tolerance=50000000;EXPECT_TRUE(readBag(f.bag,f.log,c).log_compatible);
+  c.log_match_tolerance=49999999;EXPECT_FALSE(readBag(f.bag,f.log,c).log_compatible);
+  c.log_match_tolerance=50000000;c.min_log_anchor_score=3;EXPECT_FALSE(readBag(f.bag,f.log,c).log_compatible);
+  c.min_log_anchor_score=1;EXPECT_TRUE(readBag(f.bag,f.log,c).log_compatible);
+}
+TEST(Pipeline, ConfiguredClockLimitsApplyToVelocityHeadersAndLogSessions) {
+  Fixture f(false,true,false,false,2*kSecond,600000000);Config c;
+  const auto valid=readBag(f.bag,{},c);
+  ASSERT_FALSE(valid.feedback.empty());EXPECT_TRUE(valid.feedback.back().stamp.valid);
+  c.clock_domain_tolerance=kSecond;EXPECT_FALSE(readBag(f.bag,{},c).feedback.back().stamp.valid);
+  c=Config{};c.clock_reset_tolerance=100000000;EXPECT_FALSE(readBag(f.bag,{},c).feedback.back().stamp.valid);
+  writeText(f.log,"[bt_navigator] [1792655910.000000000] Begin navigating from current location (0,0) to (1,0)\n"
+    "[bt_navigator] [1792655909.500000000] Goal succeeded\n");
+  EXPECT_EQ(parseLog(f.log)[1].session,0);EXPECT_EQ(parseLog(f.log,c)[1].session,1);
+  EXPECT_EQ(readBag(f.bag,f.log,c).events.front().session,1);
 }
