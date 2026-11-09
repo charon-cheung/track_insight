@@ -46,6 +46,9 @@ TEST_F(ArchiveTest, AccumulatesSameTimeBagsAndReplacePreservesOtherRoundsAndLabe
   const auto replaced=render(changed,true);EXPECT_EQ(replaced.report,first.report);
   const auto c=catalog();ASSERT_EQ(c["runs"].size(),2U);EXPECT_EQ(readText(second.report),other);
   const auto row=*std::find_if(c["runs"].begin(),c["runs"].end(),[](const auto& r){return r["name"]=="第一轮";});
+  EXPECT_NE(home.find("id=\"roundComparison\""),std::string::npos);
+  EXPECT_NE(home.find("archiveCompareBaseline"),std::string::npos);
+  EXPECT_EQ(home.find("__TRACK_ARCHIVE_COMPARISON_"),std::string::npos);
   EXPECT_EQ(row["note"],"原备注");EXPECT_NEAR(row["overview"]["averages"]["lateral"]["case_mean_rmse"].template get<double>(),.125,1e-12);
   EXPECT_EQ(row["overview"]["excluded_cases"],1);EXPECT_EQ(row["worst"][0]["plan_id"],"P2");
   EXPECT_EQ(row["worst"][0]["rmse"],.2);

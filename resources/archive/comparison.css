@@ -1,0 +1,26 @@
+#roundComparison{margin-top:26px}
+.archiveComparisonBody{padding:20px}
+.archiveCompareControls{display:flex;flex-wrap:wrap;align-items:flex-end;gap:16px 24px;margin-bottom:16px}
+.archiveCompareControls label{display:flex;flex-direction:column;gap:7px;color:var(--muted)}
+.archiveCompareControls select{width:auto;max-width:420px;min-width:180px}
+.archiveCompareControls .archiveChangedFilter{flex-direction:row;align-items:center;padding:10px 0}
+.archiveChangedFilter input{width:18px;height:18px}
+.archiveTrendScroll{overflow:auto;margin:16px 0 4px}
+.archiveTrendScroll svg{display:block;width:100%;min-width:760px;max-height:380px}
+.archiveTrendScroll text{font-size:13px;fill:var(--muted)}
+.archiveTrendScroll g[role=button]{cursor:pointer;outline:none}
+.archiveTrendScroll g[role=button]:focus circle{stroke:#152c4f;stroke-width:3}
+.archiveTrendScroll g[role=button]:focus text{fill:#152c4f;text-decoration:underline}
+.archiveMissingMetric{font-size:20px!important}
+#archiveTrendPoint{min-height:3em;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.archiveCompareNote{font-size:12px;margin:10px 0 20px}
+.archiveCompareSummary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:10px}
+.archiveCompareSummary .card{min-width:0;overflow-wrap:anywhere}
+.archiveCompareSummary .card:last-child strong{font-size:24px}
+#archiveCompareContext,#archiveParameterStatus{margin:15px 0;overflow-wrap:anywhere}
+#roundComparison table{min-width:650px}
+#roundComparison th,#roundComparison td{text-align:right}
+#roundComparison th:first-child,#roundComparison td:first-child{text-align:left}
+#roundComparison .archiveParameterChanged{background:#e0e0e0}
+.archiveCompareError{margin:20px;color:#9b4f12}
+@media(max-width:700px){.archiveComparisonBody{padding:14px}.archiveCompareControls{display:grid;grid-template-columns:1fr;width:100%}.archiveCompareControls select{width:100%;max-width:100%;min-width:0}.archiveCompareSummary{grid-template-columns:1fr}.archiveCompareSummary .card:last-child{grid-column:auto}}

@@ -64,7 +64,7 @@
       const heading=element('h1','本轮测试总览'),runName=$('archiveHome')?.title;
       if(runName)heading.append(element('span',' ('+runName+')','overviewRunName'));
       content.append(heading);
-      content.append(element('p',$('runTime').textContent,'overviewNote overviewIntro overviewTime'));
+      content.append(element('p',$('runTime').textContent.replace(' ','\u00a0\u00a0\u00a0\u00a0\u00a0\u00a0'),'overviewNote overviewIntro overviewTime'));
       const ranked=summary?.ranked_cases||0,excluded=summary?.excluded_cases||0;
       content.append(element('p',cases.length+' 个路径 case'+(summary.deleted_cases?' · 已删除 '+summary.deleted_cases+' 个':'')+' · 横向精度可评价 '+ranked+' 个 · 排除 failed / replaced '+excluded+' 个 · 排除直线路径 '+(summary?.excluded_straight_case_ids?.length||0)+' 个（最大偏离 ≤ 2 cm）','overviewNote overviewIntro'));
       const fileName=path=>String(path||'').split('/').filter(Boolean).pop()||'未提供';

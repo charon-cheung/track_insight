@@ -85,7 +85,14 @@ std::string homepage(const Json& catalog,const fs::path& resources) {
   auto html=readText(resources/"archive"/"index.html");
   const std::string token="__TRACK_ARCHIVE_DATA__";const auto at=html.find(token);
   if(at==std::string::npos)throw std::runtime_error("archive template is missing its data slot");
-  html.replace(at,token.size(),escaped);return html;
+  // Insert resources before untrusted catalog text, which may contain slot-like strings.
+  for(const auto& [slot,file]:std::vector<std::pair<std::string,std::string>>{
+      {"__TRACK_ARCHIVE_COMPARISON_STYLE__","comparison.css"},{"__TRACK_ARCHIVE_COMPARISON_SCRIPT__","comparison.js"}}) {
+    const auto where=html.find(slot);
+    if(where==std::string::npos)throw std::runtime_error("archive template is missing comparison slot");
+    html.replace(where,slot.size(),readText(resources/"archive"/file));
+  }
+  html.replace(html.find(token),token.size(),escaped);return html;
 }
 }
 ArchiveResult renderArchive(Json analysis,const fs::path& requested,const fs::path& resources,bool replace,
