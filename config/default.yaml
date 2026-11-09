@@ -16,7 +16,8 @@ timing:
   # 以下新容差均可为 0（严格匹配），单位 ms，范围 [0, 60000]。
   # action 与导航日志目标、日志位姿与 bag 位姿的时间关联容差（含边界）。
   log_match_tolerance_ms: 100
-  # 回退量严格大于此值才分隔日志/record epoch 或使 header 链失效；PID 快照同用。
+  # 回退量严格大于此值才分隔日志/record epoch 或使 TF header 链失效；PID 快照同用。
+  # 速度 header 回退或 header-record 差的突变超过此值，仅隔离局部区间；恢复需与最后可信时钟一致。
   clock_reset_tolerance_ms: 1000
   # 速度/TF header 与 record 时间最大允许差（含边界）；平滑命令仍使用 record 时间。
   clock_domain_tolerance_ms: 5000

@@ -25,7 +25,7 @@ target_include_directories(track_insight_core PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)
 target_link_libraries(track_insight_core PUBLIC yaml-cpp)
 add_library(track_insight_ros_io
-  src/io/input_package.cpp src/io/bag_reader.cpp src/io/tf_reconstructor.cpp)
+  src/io/input_package.cpp src/io/bag_reader.cpp src/io/velocity_clock.cpp src/io/tf_reconstructor.cpp)
 target_link_libraries(track_insight_ros_io PUBLIC track_insight_core LibArchive::LibArchive OpenSSL::Crypto)
 ament_target_dependencies(track_insight_ros_io PUBLIC
   rclcpp rosbag2_cpp rosbag2_storage tf2 tf2_msgs nav_msgs geometry_msgs action_msgs)

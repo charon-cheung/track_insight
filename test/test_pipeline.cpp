@@ -19,7 +19,7 @@ namespace {
 struct Fixture {
   std::filesystem::path root,bag,log;
   TimestampNs origin{1792655909000000000LL};
-  Fixture(bool with_tracking_raw=false,bool stamped=true,bool with_downstream=false,bool curved=false,TimestampNs feedback_offset=0,TimestampNs feedback_reset=0) {
+  Fixture(bool with_tracking_raw=false,bool stamped=true,bool with_downstream=false,bool curved=false,TimestampNs feedback_offset=0,TimestampNs feedback_reset=0,int bad_header_index=-1,TimestampNs bad_header_shift=0,bool bad_command_header=false) {
     auto name=(std::filesystem::temp_directory_path()/"track_insight_fixture_XXXXXX").string();
     std::vector<char> chars(name.begin(),name.end());chars.push_back(0);root=mkdtemp(chars.data());
     bag=root/"bag";log=root/"nav2.log";
@@ -38,6 +38,7 @@ struct Fixture {
       transform.transform.rotation.w=1;transform.transform.translation.x=std::min(j,20)*.01;
       transform.transform.translation.y=.1;tf.transforms.push_back(transform);writer.write(tf,"/tf",time);
       geometry_msgs::msg::TwistStamped cmd;cmd.header.stamp=time;cmd.header.frame_id="rbs_base_link";
+      if(bad_command_header&&j==bad_header_index)cmd.header.stamp=rclcpp::Time(ns+bad_header_shift);
       cmd.twist.linear.x=j<20?.1:0;writer.write(cmd,"/cmd_vel_nav",time);
       if(with_tracking_raw&&!(j>=10&&j<=12)) {
         geometry_msgs::msg::Twist raw;raw.linear.x=j==20?std::numeric_limits<double>::quiet_NaN():.3+.01*j;
@@ -55,7 +56,7 @@ struct Fixture {
         if(stamped)writer.write(output,"/ctrl/velocity/navi/clct",time);
         else writer.write(output.twist,"/ctrl/velocity/navi/clct",time);
       }
-      nav_msgs::msg::Odometry odom;odom.header.stamp=rclcpp::Time(ns-feedback_offset-(j>=20?feedback_reset:0));odom.header.frame_id="odom";odom.child_frame_id="rbs_base_link";
+      nav_msgs::msg::Odometry odom;odom.header.stamp=rclcpp::Time(ns-feedback_offset-(j>=20?feedback_reset:0)+(j==bad_header_index&&!bad_command_header?bad_header_shift:0));odom.header.frame_id="odom";odom.child_frame_id="rbs_base_link";
       odom.twist.twist.linear.x=j<20?.08:0;writer.write(odom,"/dev/odometry/raw/dist",time);
     }
     writer.close();
@@ -362,4 +363,44 @@ TEST(Pipeline, ConfiguredClockLimitsApplyToVelocityHeadersAndLogSessions) {
     "[bt_navigator] [1792655909.500000000] Goal succeeded\n");
   EXPECT_EQ(parseLog(f.log)[1].session,0);EXPECT_EQ(parseLog(f.log,c)[1].session,1);
   EXPECT_EQ(readBag(f.bag,f.log,c).events.front().session,1);
+}
+
+TEST(Pipeline, IsolatedVelocityClockErrorPreservesOtherSamplesAndStopsInterpolation) {
+  for(const bool command:{false,true})for(const auto shift:{-10*kSecond,10*kSecond,-2*kSecond,2*kSecond}) {
+    SCOPED_TRACE(std::to_string(command)+" shift="+std::to_string(shift));
+    Fixture f(false,true,false,false,0,0,10,shift,command);Config c;
+    const auto data=readBag(f.bag,{},c);
+    const auto& values=command?data.commands:data.feedback;ASSERT_EQ(values.size(),41U);
+    for(const auto& v:values) {
+      const bool bad=v.stamp.record_ns==f.origin+kSecond;
+      EXPECT_EQ(v.stamp.valid,!bad);EXPECT_TRUE(v.valid);
+      if(bad) {
+        EXPECT_EQ(v.stamp.header_ns,f.origin+kSecond+shift);
+        EXPECT_EQ(v.stamp.ns,f.origin+900000000);
+      } else EXPECT_EQ(v.stamp.ns,v.stamp.record_ns);
+    }
+    Interval interval;interval.start=f.origin;interval.end=f.origin+4*kSecond;
+    const auto rows=alignVelocity(data,interval,c);double valid_s=0;
+    for(const auto& r:rows) {
+      const bool gap=r.ns>=f.origin+900000000&&r.ns<f.origin+1100000000;
+      EXPECT_EQ(r.valid,!gap)<<r.ns-f.origin;
+      if(r.valid)valid_s+=double(r.end_ns-r.ns)/kSecond;
+    }
+    EXPECT_NEAR(valid_s,3.8,1e-12);
+    const auto analysis=makeAnalysis(data,evaluate(data,c),c,captureDisplayClock(data.start,data.end,data.wall_clock));
+    EXPECT_EQ(analysis["metric_version"],"1.1-duration-left-cells-clock-isolation");
+    const auto& signals=analysis["signals"][command?"commands":"feedback"];
+    bool anchor=false;
+    for(const auto& row:signals)if(row[5]==std::to_string(f.origin+900000000)&&row[4]==true) {
+      anchor=true;EXPECT_EQ(row[0],row[6]); // no line/hold across the quarantined interval
+    }
+    EXPECT_TRUE(anchor);
+    ASSERT_EQ(data.diagnostics.size(),2U); // localized clock diagnostic plus missing log
+    const auto topic=command?c.command_topic:c.feedback_topic;
+    const auto d=std::find_if(data.diagnostics.begin(),data.diagnostics.end(),[&](const auto& x){return x.source==topic;});
+    ASSERT_NE(d,data.diagnostics.end());EXPECT_EQ(d->ns,f.origin+kSecond);
+    EXPECT_NE(d->message.find("begin_ns="+std::to_string(f.origin+900000000)),std::string::npos);
+    EXPECT_NE(d->message.find("end_ns="+std::to_string(f.origin+1100000000)),std::string::npos);
+    EXPECT_NE(d->message.find("rejected=1"),std::string::npos);
+  }
 }

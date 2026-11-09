@@ -1,5 +1,6 @@
 #include "track_insight/input.hpp"
 #include "tf_history.hpp"
+#include "velocity_clock.hpp"
 #include <rosbag2_cpp/reader.hpp>
 #include <rclcpp/serialization.hpp>
 #include <rclcpp/serialized_message.hpp>
@@ -61,7 +62,6 @@ RunData readBag(const std::filesystem::path& input,const std::filesystem::path& 
   std::map<std::string,int> goal_status;
   TfHistory transforms(config,data.end-data.start);
   std::uint64_t sequence=0;TimestampNs last_record=0;int epoch=0;
-  std::map<std::string,TimestampNs> previous_header;std::set<std::string> clock_invalid;
   while(reader.has_next()){
     const auto message=reader.read_next();Stamp s;s.record_ns=message->recv_timestamp;s.send_ns=message->send_timestamp;
     s.ns=s.record_ns;s.sequence=sequence++;s.source=message->topic_name;
@@ -70,11 +70,6 @@ RunData readBag(const std::filesystem::path& input,const std::filesystem::path& 
     last_record=s.record_ns;s.epoch=epoch;
     auto setHeader=[&](const builtin_interfaces::msg::Time& time){
       s.header_ns=stamp(time);s.ns=s.header_ns?s.header_ns:s.record_ns;s.clock_domain=s.header_ns?"message_header":"record_fallback";
-      auto& previous=previous_header[s.source];
-      if(previous&&s.header_ns&&s.header_ns<previous-config.clock_reset_tolerance)clock_invalid.insert(s.source);
-      previous=s.header_ns;
-      if(s.header_ns&&std::abs(s.header_ns-s.record_ns)>config.clock_domain_tolerance)clock_invalid.insert(s.source);
-      if(clock_invalid.count(s.source)){s.valid=false;s.clock_domain="unverified"; }
     };
     try{
       const auto& type=types.at(s.source);
@@ -133,11 +128,11 @@ RunData readBag(const std::filesystem::path& input,const std::filesystem::path& 
   transforms.finish();data.poses=transforms.poses();
   if(transforms.hasClockReset())data.diagnostics.push_back({"tf_header_clock_reset","TF header time reset; affected chains excluded rather than merged","/tf",0});
   for(auto* values:{&data.commands,&data.feedback,&data.downstream,&data.tracking_raw}){
-    for(auto& v:*values){if(clock_invalid.count(v.stamp.source))v.stamp.valid=false;transforms.convert(v);}
+    isolateVelocityClocks(*values,config,data.diagnostics);
+    for(auto& v:*values)if(v.stamp.valid)transforms.convert(v);
     std::stable_sort(values->begin(),values->end(),[](const auto& a,const auto& b){
       return a.stamp.ns==b.stamp.ns?a.stamp.sequence<b.stamp.sequence:a.stamp.ns<b.stamp.ns;});
   }
-  for(const auto& topic:clock_invalid)data.diagnostics.push_back({"clock_domain_unverified","Header time is discontinuous or incompatible with recording time",topic,0});
   for(const auto& p:data.poses)if(!p.valid&&p.reason=="localization_jump")
     data.diagnostics.push_back({"localization_jump","Recorded localization discontinuity; affected cells excluded from geometry metrics","/tf",p.stamp.ns});
   data.wall_clock=data.start>=946684800LL*kSecond;

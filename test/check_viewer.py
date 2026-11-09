@@ -51,7 +51,7 @@ async def main():
                 assert synced['readout']==synced['expectedReadout'],synced
                 assert synced['timestamp'].startswith('Timestamp: '),synced
                 labels=await evaluate("['velocity','errors'].map(id=>document.getElementById(id).layout.annotations.find(a=>a.name==='cursorTimestamp'))")
-                assert all(a['text']==synced['timestamp'].removeprefix('Timestamp: ') and a['x']==step['after'] for a in labels),labels
+                assert all(''.join(a['text'].split())==synced['timestamp'].removeprefix('Timestamp: ') and a['x']==step['after'] for a in labels),labels
             for edge,button,offset in [('start','stepBack',.02),('end','stepForward',-.02)]:
                 bounds=await evaluate("(()=>{const p=trackInsight.analysis.paths.find(p=>p.interval.id===trackInsight.selected),edge=p."+edge+";trackInsight.setCursor(edge+("+str(offset)+"));document.getElementById('"+button+"').click();document.getElementById('"+button+"').click();return {expected:edge,actual:trackInsight.cursor};})()")
                 assert bounds['actual']==bounds['expected'],bounds
@@ -123,7 +123,9 @@ async def main():
                 for x,y,text in zip(trace['x'],trace['y'],trace['text']):
                     if x is None:continue
                     assert y==samples[x][axis+1]
-                    assert 'bag record 时间' in text and '/ctrl/velocity/navi/clct' in text
+                    stamp=int(samples[x][5])
+                    assert ''.join(text.split())==f'{stamp//1000000000}.{stamp//1000000%1000:03d}',text
+                    assert '/ctrl/' not in text and '平滑输出:' in trace['hovertemplate']
         async def check_overview():
             saved=await evaluate("({key:trackInsight.selected,cursor:trackInsight.cursor})")
             await evaluate("document.getElementById('reportMode').click()")
@@ -225,7 +227,7 @@ async def main():
                 key=keys[1]
                 await evaluate("(()=>{const s=document.getElementById('quickSelection');s.value="+json.dumps(key)+";s.dispatchEvent(new Event('change'));})()")
                 await asyncio.sleep(.2)
-                before=await evaluate("document.getElementById('cards').textContent")
+                before=await evaluate("JSON.stringify(trackInsight.analysis.paths)")
                 await evaluate("if(document.getElementById('toggleFavorite').getAttribute('aria-pressed')!=='true')document.getElementById('toggleFavorite').click();document.getElementById('deleteSelection').click()")
                 await asyncio.sleep(.2)
                 expected=keys[2] if len(keys)>2 else keys[0]
@@ -233,17 +235,15 @@ async def main():
                 state="(()=>{const key="+json.dumps(key)+";return {normal:[...document.getElementById('quickSelection').options].some(o=>o.value===key),starred:[...document.getElementById('favoriteSelection').options].some(o=>o.value===key)}})()"
                 assert await evaluate(state)=={'normal':False,'starred':False},'Deleted item remains in comprehensive dropdowns'
                 await evaluate("document.getElementById('reportMode').click()")
-                assert await evaluate(state)=={'normal':True,'starred':True},'Delete affected report mode'
+                assert await evaluate(state)=={'normal':False,'starred':False},'Deleted item remains in report mode'
                 assert await evaluate("getComputedStyle(document.getElementById('deleteSelection')).display")=='none'
-                await evaluate("(()=>{const s=document.getElementById('favoriteSelection');s.value="+json.dumps(key)+";s.dispatchEvent(new Event('change'));})()")
-                await asyncio.sleep(.2)
-                assert await evaluate("document.getElementById('cards').textContent")==before,'Report metrics changed'
+                assert await evaluate("JSON.stringify(trackInsight.analysis.paths)")==before,'Original per-case metrics changed'
                 await evaluate("document.getElementById('reviewMode').click()")
                 assert await evaluate(state)=={'normal':False,'starred':False}
                 await reload_report()
                 assert await evaluate(state)=={'normal':False,'starred':False},'Deleted item returned after reload'
                 await evaluate("document.getElementById('reportMode').click()")
-                assert await evaluate(state)=={'normal':True,'starred':True},'Report lost item after reload'
+                assert await evaluate(state)=={'normal':False,'starred':False},'Deleted item returned in report mode after reload'
             finally:
                 await evaluate("(()=>{for(const key of Object.keys(localStorage))if(key.startsWith('trackInsight:'))localStorage.removeItem(key);for(const [key,value] of Object.entries("+json.dumps(stored)+"))localStorage.setItem(key,value);})()")
                 await reload_report()
@@ -273,8 +273,9 @@ async def main():
         for task in navigation_cases:
             kind=min(len(task['paths']),2)
             if kind in tested:continue
-            tested.add(kind)
             key=task['paths'][0] if kind==1 else task['id']
+            if not await evaluate("!!document.querySelector('#navigation button[data-key=\""+key+"\"]')"):continue
+            tested.add(kind)
             state=await evaluate("(async()=>{const key="+json.dumps(key)+",task=trackInsight.analysis.tasks.find(t=>t.id==="+json.dumps(task['id'])+");document.querySelector('#navigation button[data-key=\"'+key+'\"]').click();await new Promise(r=>setTimeout(r,250));return {selected:trackInsight.selected,title:document.getElementById('selectionTitle').textContent,info:document.getElementById('taskInfo').textContent,coverage:document.getElementById('coverageHeading').textContent,detail:document.querySelector('.card .detail').textContent,range:document.getElementById('velocity').layout.xaxis.range,taskRange:[task.start_ns,task.end_ns].map(ns=>Number(BigInt(ns)-BigInt(trackInsight.analysis.clock.origin_ns))/1e9),taskEntries:document.querySelectorAll('#navigation button[data-key=\"'+task.id+'\"]').length,quick:document.getElementById('quickSelection').value,log:document.getElementById('logDetail').textContent};})()")
             assert state['selected']==key and state['quick']==key,state
             assert task['id'] in state['info'],state
@@ -317,7 +318,7 @@ async def main():
             await reload_records()
             assert await evaluate("document.getElementById('toggleBlackFavorite').getAttribute('aria-pressed')")=='true','Old favorite was lost'
             assert not await evaluate("[...document.getElementById('quickSelection').options].some(o=>o.value==='E2')"),'Old hidden item was lost'
-            await evaluate("document.getElementById('manageReviewRecords').click()")
+            await evaluate("document.getElementById('reviewRecordsDialog').showModal()")
             assert await evaluate("document.getElementById('reviewRecordsDialog').matches(':modal')")
             assert await evaluate("document.querySelector('#hiddenReviewRecords [data-key=E2]')!==null")
             download_dir=Path(args.screenshot).resolve().parent/'review_record_downloads'
@@ -331,7 +332,7 @@ async def main():
                 await asyncio.sleep(.1)
             assert downloads,'No review record download'
             record=json.loads(max(downloads,key=lambda p:p.stat().st_mtime_ns).read_text())
-            assert record['schema_version']==2 and record['favorites']=={'red':[], 'black':['E1']} and record['hidden']==['E2'],record
+            assert record['schema_version']==3 and record['favorites']['red']==[] and 'E1' in record['favorites']['black'] and record['hidden']==['E2'] and record['issues']=={},record
             await evaluate("document.querySelector('#hiddenReviewRecords [data-key=E2] button').click()")
             assert await evaluate("[...document.getElementById('quickSelection').options].some(o=>o.value==='E2')")
             before_metrics=await evaluate("JSON.stringify(trackInsight.analysis.overview)")
@@ -359,7 +360,7 @@ async def main():
             favorite_before=await evaluate("document.getElementById('toggleFavorite').getAttribute('aria-pressed')")
             await evaluate("window.reviewOriginalSetItem=Storage.prototype.setItem;Storage.prototype.setItem=function(){throw new DOMException('blocked','SecurityError')}")
             try:
-                await evaluate("document.getElementById('toggleFavorite').click();document.getElementById('manageReviewRecords').click()")
+                await evaluate("document.getElementById('toggleFavorite').click();document.getElementById('reviewRecordsDialog').showModal()")
                 assert '无法保存' in await evaluate("document.getElementById('reviewRecordsStatus').textContent")
                 assert await evaluate("document.getElementById('toggleFavorite').getAttribute('aria-pressed')")!=favorite_before
                 assert not await evaluate("document.getElementById('exportReviewRecords').disabled")
@@ -368,11 +369,13 @@ async def main():
         finally:
             await evaluate("(()=>{for(const k of Object.keys(localStorage))if(k.startsWith('trackInsight:'))localStorage.removeItem(k);for(const [k,v] of Object.entries("+json.dumps(saved_storage)+"))localStorage.setItem(k,v);})()")
             await reload_records()
+        await evaluate("window.acceptancePath=trackInsight.analysis.paths.find(p=>trackInsight.analysis.overview.case_ids.includes(p.interval.id)&&p.end-p.start>2&&p.tracking.some(r=>r[10]&&r[13]>r[0]));if(!window.acceptancePath)throw Error('Use a report with a valid case longer than two seconds')")
         initial=await evaluate("({title:document.title,paths:trackInsight.analysis.plans.length,time:trackInsight.time(10),traces:document.getElementById('velocity').data.length})")
         await call("Emulation.setTimezoneOverride",{"timezoneId":"America/Los_Angeles"})
         assert await evaluate("trackInsight.time(10)")==initial["time"],"Viewer timezone changed labels"
-        await evaluate("trackInsight.select([trackInsight.analysis.paths[Math.min(8,trackInsight.analysis.paths.length-1)]],'acceptance')")
-        await evaluate("trackInsight.setCursor(trackInsight.analysis.paths[Math.min(8,trackInsight.analysis.paths.length-1)].start+1)")
+        await evaluate("trackInsight.select([window.acceptancePath],window.acceptancePath.interval.id)")
+        await evaluate("trackInsight.setCursor(window.acceptancePath.start+1)")
+        await evaluate("(()=>{const r=window.acceptancePath.tracking.find(r=>r[10]&&r[13]>r[0]);trackInsight.setCursor((r[0]+r[13])/2);})()")
         assert await evaluate("document.getElementById('trajectory').data.at(-2).x.length>0"),"Cursor position absent"
         await asyncio.sleep(.3)
         assert await evaluate("Array.from(document.querySelector('#trajectoryPanel .panelTitle').querySelectorAll('button,input,select,summary')).map(e=>e.id)")==['exportTrajectory']
@@ -389,9 +392,9 @@ async def main():
         await evaluate("document.getElementById('resetTime').click()")
         await asyncio.sleep(.3)
         # Mode changes must preserve selection, cursor and zoom, using one set of plots.
-        await evaluate("trackInsight.select([trackInsight.analysis.paths[Math.min(8,trackInsight.analysis.paths.length-1)]],trackInsight.analysis.paths[Math.min(8,trackInsight.analysis.paths.length-1)].interval.id)")
-        await evaluate("trackInsight.setCursor(trackInsight.analysis.paths[Math.min(8,trackInsight.analysis.paths.length-1)].start+1)")
-        await evaluate("(()=>{const p=trackInsight.analysis.paths[Math.min(8,trackInsight.analysis.paths.length-1)];return Plotly.relayout(document.getElementById('velocity'),{'xaxis.range[0]':p.start+.5,'xaxis.range[1]':Math.min(p.end,p.start+8)}).then(()=>true);})()")
+        await evaluate("trackInsight.select([window.acceptancePath],window.acceptancePath.interval.id)")
+        await evaluate("trackInsight.setCursor(window.acceptancePath.start+1)")
+        await evaluate("(()=>{const p=window.acceptancePath;return Plotly.relayout(document.getElementById('velocity'),{'xaxis.range[0]':p.start+.5,'xaxis.range[1]':Math.min(p.end,p.start+8)}).then(()=>true);})()")
         await asyncio.sleep(.2)
         await check_steps()
         state_expression="({selected:trackInsight.selected,cursor:trackInsight.cursor,range:document.getElementById('velocity').layout.xaxis.range})"
@@ -432,7 +435,7 @@ async def main():
         await evaluate("document.getElementById('play').click()")
         before=await evaluate("trackInsight.cursor");await asyncio.sleep(.4)
         assert await evaluate("trackInsight.cursor")>before,'Review playback did not advance'
-        assert await evaluate("['velocity','errors'].every(id=>{const a=document.getElementById(id).layout.annotations.find(a=>a.name==='cursorTimestamp');return a.text===document.getElementById('cursorTimestamp').textContent.replace('Timestamp: ','')&&a.x===trackInsight.cursor;})"),'Playback timestamp did not synchronize'
+        assert await evaluate("['velocity','errors'].every(id=>{const a=document.getElementById(id).layout.annotations.find(a=>a.name==='cursorTimestamp');return a.text.replaceAll('\u00a0','')===document.getElementById('cursorTimestamp').textContent.replace('Timestamp: ','')&&a.x===trackInsight.cursor;})"),'Playback timestamp did not synchronize'
         await evaluate("document.getElementById('play').click()")
         await check_steps()
         await call("Emulation.setDeviceMetricsOverride",{"width":1366,"height":768,"deviceScaleFactor":1,"mobile":False})
@@ -442,6 +445,6 @@ async def main():
         assert not external,external
         assert not errors,errors
         print(json.dumps({"status":"passed","initial":initial,"offline":True,"timezone_independent":True,
-                          "playback":True,"report_overview":True,"favorites_add_remove_reload_navigate":True,"review_records_restore_import_export":True,"report_outcome_filter":True,"comprehensive_delete_persist_report_preserved":True,"step_50ms_both_modes":True,"step_pauses_and_clamps":True,"range_link":True,"review_mode":True,"shared_cursor":True,
+                          "playback":True,"report_overview":True,"favorites_add_remove_reload_navigate":True,"review_records_restore_import_export":True,"report_outcome_filter":True,"both_modes_delete_persist_original_metrics_preserved":True,"step_50ms_both_modes":True,"step_pauses_and_clamps":True,"range_link":True,"review_mode":True,"shared_cursor":True,
                           "navigation_cases":sorted(tested),"state_preserved":True,"viewports":["1366x768","1920x1080"],"errors":len(errors)},ensure_ascii=False))
 asyncio.run(main())

@@ -53,7 +53,7 @@ DisplayClock readClock(const Json& a) {
 }
 Json makeAnalysis(const RunData& d,const Evaluation& e,const Config& c,const DisplayClock& clock) {
   auto relative=[&](TimestampNs ns){return static_cast<double>(ns-clock.origin_ns)/kSecond;};
-  Json a={{"schema_version",1},{"metric_version","1.0-duration-left-cells"},
+  Json a={{"schema_version",1},{"metric_version","1.1-duration-left-cells-clock-isolation"},
     {"generator",{{"name","Track Insight"},{"version","0.1.0"}}},
     {"meta",{{"input_path",d.input_path},{"log_path",d.log_path},{"input_sha256",d.input_hash},
       {"log_sha256",d.log_hash},{"start_ns",std::to_string(d.start)},{"end_ns",std::to_string(d.end)},
@@ -121,10 +121,12 @@ Json makeAnalysis(const RunData& d,const Evaluation& e,const Config& c,const Dis
   auto signal=[&](const std::string& key,const std::vector<Velocity>& values,TimestampNs age,bool hold) {
     for(std::size_t i=0;i<values.size();++i) {
       const auto& v=values[i];TimestampNs end=v.stamp.ns;
-      if(i+1<values.size()&&values[i+1].stamp.epoch==v.stamp.epoch&&values[i+1].valid&&values[i+1].stamp.valid) {
-        const auto next=values[i+1].stamp.ns;
-        if(next-v.stamp.ns<=age)end=next;else if(hold)end=v.stamp.ns+age;
-      } else if(hold)end=std::min(d.end,v.stamp.ns+age);
+      if(hold)end=std::min(d.end,v.stamp.ns+age);
+      if(i+1<values.size()&&values[i+1].stamp.epoch==v.stamp.epoch) {
+        const auto& next=values[i+1];
+        if(hold)end=std::min(end,next.stamp.ns);
+        else if(next.valid&&next.stamp.valid&&next.stamp.ns-v.stamp.ns<=age)end=next.stamp.ns;
+      }
       a["signals"][key].push_back(Json::array({relative(v.stamp.ns),v.vx,v.vy,v.omega,
         v.valid&&v.stamp.valid,std::to_string(v.stamp.ns),relative(end),v.reason}));
     }

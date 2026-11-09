@@ -5,15 +5,23 @@
 namespace track_insight {
 std::vector<Velocity> causalCommands(const std::vector<Velocity>& input) {
   std::map<std::pair<int,TimestampNs>,std::size_t> counts;
-  for(const auto& v:input)++counts[{v.stamp.epoch,v.stamp.ns}];
+  for(const auto& v:input)if(v.stamp.valid)++counts[{v.stamp.epoch,v.stamp.ns}];
   auto result=input;
-  for(auto& v:result)if(counts[{v.stamp.epoch,v.stamp.ns}]>1) {
+  for(auto& v:result)if(v.stamp.valid&&counts[{v.stamp.epoch,v.stamp.ns}]>1) {
     if(!v.stamp.record_ns){v.valid=false;v.reason="duplicate_command_time_without_delivery_evidence";}
     else {v.stamp.ns=std::max(v.stamp.ns,v.stamp.record_ns);v.stamp.clock_domain="duplicate_header_record_time";}
   }
+  // Delivery-time correction of a preceding duplicate must not move it past its fence.
+  std::map<std::pair<std::string,int>,TimestampNs> delivery;
+  for(auto& v:result) {
+    const auto key=std::make_pair(v.stamp.source,v.stamp.epoch);
+    if(v.stamp.valid)delivery[key]=v.stamp.ns;
+    else if(v.stamp.clock_domain=="unverified"&&delivery.count(key))
+      v.stamp.ns=std::max(v.stamp.ns,delivery.at(key));
+  }
   std::stable_sort(result.begin(),result.end(),[](const Velocity& a,const Velocity& b){
     return a.stamp.ns==b.stamp.ns?a.stamp.sequence<b.stamp.sequence:a.stamp.ns<b.stamp.ns;});
-  for(std::size_t i=1;i<result.size();++i)if(result[i].stamp.ns==result[i-1].stamp.ns&&result[i].stamp.epoch==result[i-1].stamp.epoch&&
+  for(std::size_t i=1;i<result.size();++i)if(result[i].stamp.valid&&result[i-1].stamp.valid&&result[i].stamp.ns==result[i-1].stamp.ns&&result[i].stamp.epoch==result[i-1].stamp.epoch&&
     (result[i].vx!=result[i-1].vx||result[i].vy!=result[i-1].vy||result[i].omega!=result[i-1].omega)) {
       result[i].valid=result[i-1].valid=false;result[i].reason=result[i-1].reason="conflicting_command_delivery_time";
     }
@@ -44,7 +52,15 @@ std::vector<VelocitySample> alignVelocity(const RunData& data,const Interval& in
     auto right=std::lower_bound(data.feedback.begin(),data.feedback.end(),row.ns,
       [](const Velocity& v,TimestampNs t){return v.stamp.ns<t;});
     if(right==data.feedback.end()){output.push_back(row);continue;}
-    if(right->stamp.ns==row.ns) row.feedback=*right;
+    if(right->stamp.ns==row.ns) {
+      // Interior fences follow their good anchor; a recovered bad prefix precedes
+      // its first good sample. Use the last sample only when this group has a fence.
+      bool fence=false;auto last=right;
+      for(auto next=right;next!=data.feedback.end()&&next->stamp.ns==row.ns;++next)
+        if(next->stamp.epoch==interval.epoch){last=next;fence=fence||!next->stamp.valid;}
+      if(fence)right=last;
+      row.feedback=*right;
+    }
     else if(right!=data.feedback.begin()) {
       const auto& left=*std::prev(right);
       if(right->stamp.ns-left.stamp.ns<=0 || right->stamp.ns-left.stamp.ns>config.velocity_gap ||

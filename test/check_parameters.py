@@ -4,7 +4,7 @@ import json
 from check_overview_sort import ROOT, check
 
 source=(ROOT/'resources/viewer/parameters.js').read_text()
-base={'schema_version':1,'source_path':'/test/pid.yaml','captured_at_label':'2026-10-30 12:00:00',
+base={'schema_version':2,'source_kind':'navigation_log','status':'available','source_path':'/test/nav2.log','captured_at_label':'2026-10-30 12:00:00',
       'values':{'unchanged':.8,'changed':2,'added':True,'type_changed':'1','unsafe':'<img src=x onerror=alert(1)>'},
       'comparison':{'status':'available','run_name':'previous','values':{'unchanged':.80,'changed':1,'removed':3,'type_changed':1,'unsafe':'<img src=x onerror=alert(1)>'}}}
 checks='''
@@ -33,6 +33,12 @@ for comparison in (None,{'status':'no_previous_round'},{'status':'previous_snaps
     ''')
 check(source,'window.trackInsight={analysis:{}};', '''
   document.dispatchEvent(new Event('trackinsight:ready'));
-  if(!document.getElementById('pidParameters').textContent.includes('未保存'))throw Error('Legacy snapshot should be unavailable');
+  if(!document.getElementById('pidParameters').textContent.includes('测试时参数未知'))throw Error('Legacy snapshot should be unavailable');
 ''')
+for invalid in (dict(base,schema_version=1),dict(base,source_kind='configuration_file'),dict(base,status='unknown')):
+    check(source,'window.trackInsight={analysis:{pid_parameters:'+json.dumps(invalid)+'}};', """
+      document.dispatchEvent(new Event('trackinsight:ready'));
+      if(document.querySelector('#pidParameterRows tr'))throw Error('Unverified snapshot must not render values');
+      if(!document.getElementById('pidParameters').textContent.includes('测试时参数未知'))throw Error('Unverified snapshot must be unknown');
+    """)
 print('PASS: parameter values, gray changes/additions/removals, previous values, no baseline, legacy report, safe text, immutable snapshot')

@@ -1,10 +1,12 @@
 #include <gtest/gtest.h>
 #include "track_insight/input.hpp"
 #include "tf_history.hpp"
+#include "velocity_clock.hpp"
 #include <archive.h>
 #include <archive_entry.h>
 #include <unistd.h>
 #include <fstream>
+#include <algorithm>
 
 using namespace track_insight;
 namespace {
@@ -78,4 +80,93 @@ TEST(Tf, ConfiguredClockLimitsControlDiscrepancyAndReset) {
     tf.finish();return tf.hasClockReset();};
   EXPECT_FALSE(reset(c));c.clock_reset_tolerance=500000000;EXPECT_FALSE(reset(c));
   c.clock_reset_tolerance=499999999;EXPECT_TRUE(reset(c));
+}
+
+namespace {
+Velocity clockSample(int index,TimestampNs shift=0,int epoch=0,const std::string& source="/feedback") {
+  Velocity v;v.stamp.record_ns=100*kSecond+index*100000000LL;
+  v.stamp.ns=v.stamp.header_ns=v.stamp.record_ns+shift;v.stamp.sequence=index;
+  v.stamp.epoch=epoch;v.stamp.source=source;v.stamp.clock_domain="message_header";
+  v.frame=v.reference_point="base";v.vx=.1;return v;
+}
+}
+TEST(VelocityClock, PrefixTailAndConsecutiveErrorsAreLocalized) {
+  for(const auto& indices:{std::vector<int>{0},std::vector<int>{4},std::vector<int>{1,2}}) {
+    std::vector<Velocity> values;std::vector<Diagnostic> diagnostics;
+    for(int i=0;i<5;++i)values.push_back(clockSample(i,
+      std::find(indices.begin(),indices.end(),i)!=indices.end()?10*kSecond:-2*kSecond));
+    isolateVelocityClocks(values,Config{},diagnostics);
+    for(int i=0;i<5;++i)EXPECT_EQ(values[i].stamp.valid,std::find(indices.begin(),indices.end(),i)==indices.end());
+    ASSERT_EQ(diagnostics.size(),1U);EXPECT_EQ(diagnostics[0].ns,values[indices[0]].stamp.record_ns);
+    EXPECT_LE(values[indices[0]].stamp.ns,values.front().stamp.ns+400000000);
+    if(indices[0]==4){EXPECT_NE(diagnostics[0].message.find("end_ns=unrecovered"),std::string::npos);}
+  }
+}
+TEST(VelocityClock, PersistentResetDoesNotRecoverByCatchingOldHeader) {
+  std::vector<Velocity> values;std::vector<Diagnostic> diagnostics;
+  for(int i=0;i<40;++i)values.push_back(clockSample(i,i>=10?-2*kSecond:0));
+  isolateVelocityClocks(values,Config{},diagnostics);
+  for(int i=0;i<40;++i)EXPECT_EQ(values[i].stamp.valid,i<10);
+  ASSERT_EQ(diagnostics.size(),1U);
+  EXPECT_NE(diagnostics[0].message.find("rejected=30"),std::string::npos);
+}
+TEST(VelocityClock, RecoveryAndRecordEpochsKeepIndependentEvidence) {
+  std::vector<Velocity> values{clockSample(0),clockSample(1,2*kSecond),clockSample(2),
+    clockSample(3,2*kSecond,0,"/command"),clockSample(4,2*kSecond,1),clockSample(5,2*kSecond,1)};
+  std::vector<Diagnostic> diagnostics;isolateVelocityClocks(values,Config{},diagnostics);
+  for(std::size_t i=0;i<values.size();++i)EXPECT_EQ(values[i].stamp.valid,i!=1);
+  ASSERT_EQ(diagnostics.size(),1U);EXPECT_EQ(diagnostics[0].source,"/feedback");
+}
+TEST(VelocityClock, StableDelayZeroHeadersAndRecordTimedOutputRemainSupported) {
+  std::vector<Velocity> values{clockSample(0,-2*kSecond),clockSample(1,-2*kSecond),clockSample(2,-2*kSecond)};
+  values[1].stamp.header_ns=0;values[1].stamp.ns=values[1].stamp.record_ns;values[1].stamp.clock_domain="record_fallback";
+  auto output=clockSample(3,10*kSecond);output.stamp.ns=output.stamp.record_ns;output.stamp.clock_domain="bag_record";values.push_back(output);
+  std::vector<Diagnostic> diagnostics;isolateVelocityClocks(values,Config{},diagnostics);
+  for(const auto& v:values)EXPECT_TRUE(v.stamp.valid);
+  EXPECT_TRUE(diagnostics.empty());EXPECT_EQ(values[3].stamp.header_ns,output.stamp.header_ns);
+  // A zero header does not establish that a persistent changed header clock recovered.
+  values={clockSample(0),clockSample(1,2*kSecond),clockSample(2),clockSample(3,2*kSecond)};
+  values[2].stamp.header_ns=0;values[2].stamp.clock_domain="record_fallback";
+  isolateVelocityClocks(values,Config{},diagnostics);
+  EXPECT_TRUE(values[0].stamp.valid);EXPECT_FALSE(values[1].stamp.valid);
+  EXPECT_TRUE(values[2].stamp.valid);EXPECT_FALSE(values[3].stamp.valid);
+}
+TEST(VelocityClock, ConfiguredLimitsHaveInclusiveBoundaries) {
+  Config c;c.clock_reset_tolerance=500000000;
+  for(const auto extra:{TimestampNs(0),TimestampNs(1)}) {
+    std::vector<Velocity> values{clockSample(0,-kSecond),clockSample(1,-kSecond+c.clock_reset_tolerance+extra)};
+    std::vector<Diagnostic> diagnostics;isolateVelocityClocks(values,c,diagnostics);
+    EXPECT_TRUE(values[0].stamp.valid);EXPECT_EQ(values[1].stamp.valid,extra==0);
+    values={clockSample(0,c.clock_domain_tolerance+extra)};diagnostics.clear();
+    isolateVelocityClocks(values,c,diagnostics);EXPECT_EQ(values[0].stamp.valid,extra==0);
+  }
+}
+
+TEST(VelocityClock, CommandDuplicateDeliveryCannotCrossClockFence) {
+  RunData data;Config c;std::vector<Diagnostic> diagnostics;
+  for(int i=0;i<6;++i) {
+    data.commands.push_back(clockSample(i));data.feedback.push_back(clockSample(i,0,0,"/odom"));
+  }
+  data.commands[2].stamp.ns=data.commands[2].stamp.header_ns=data.commands[1].stamp.ns;
+  data.commands[3].stamp.ns=data.commands[3].stamp.header_ns+=10*kSecond;
+  isolateVelocityClocks(data.commands,c,diagnostics);
+  const auto causal=causalCommands(data.commands);
+  for(const auto& v:causal)if(!v.stamp.valid){EXPECT_EQ(v.stamp.ns,data.commands[2].stamp.record_ns);}
+  Interval interval;interval.start=100*kSecond;interval.end=100*kSecond+500000000;
+  for(const auto& row:alignVelocity(data,interval,c)) {
+    const bool gap=row.ns>=100*kSecond+200000000&&row.ns<100*kSecond+400000000;
+    EXPECT_EQ(row.valid,!gap)<<row.ns-100*kSecond;
+  }
+}
+
+TEST(VelocityClock, DelayedFeedbackRecoversAtFirstGoodSampleAfterBadPrefix) {
+  RunData data;Config c;std::vector<Diagnostic> diagnostics;
+  data.feedback={clockSample(0,10*kSecond),clockSample(1,-2*kSecond),clockSample(2,-2*kSecond)};
+  isolateVelocityClocks(data.feedback,c,diagnostics);
+  std::stable_sort(data.feedback.begin(),data.feedback.end(),[](const auto& a,const auto& b){return a.stamp.ns<b.stamp.ns;});
+  data.commands={clockSample(1,-2*kSecond)};
+  Interval interval;interval.start=data.commands[0].stamp.ns;interval.end=interval.start+100000000;
+  const auto rows=alignVelocity(data,interval,c);ASSERT_EQ(rows.size(),1U);
+  EXPECT_TRUE(rows[0].valid)<<rows[0].reason;
+  EXPECT_TRUE(data.feedback[1].stamp.valid);EXPECT_TRUE(data.feedback[2].stamp.valid);
 }

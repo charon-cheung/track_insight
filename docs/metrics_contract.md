@@ -1,6 +1,10 @@
-# 数据与指标合同 v1
+# 数据与指标合同 v1.1（冻结）
 
-schema_version = 1；metric_version = 1.0-duration-left-cells。
+冻结日期：2026-11-09。`schema_version = 1`；`metric_version = 1.1-duration-left-cells-clock-isolation`。
+
+本版本固定下述有效性、时间配对和统计语义。后续改变这些语义必须发布新的 metric_version，不能沿用本版本号。旧报告继续保留原版本；仅重渲染不能将旧指标升级为本版本，须从 bag 重新分析。1.0-duration-left-cells 与本版本的统计公式相同，但速度时钟异常的排除范围不同，跨轮对比不得视为同一指标版本。
+
+指标合同版本与控制器日志协议版本是不同概念：当前 PID_LOG 不携带协议版本，因此本工具仍按已支持字段、类型、时间和身份关联证据判断兼容性，不声称已经实现日志协议版本协商。未知字段不自动成为评价证据；缺少必要字段时降级为 inferred 或不可用。未来若引入日志协议版本，应显式声明支持版本并拒用不兼容版本的日志证据，不能只修改本合同标题来宣称兼容。
 
 ## 时间与身份
 
@@ -17,6 +21,12 @@ P 是每条路径发布快照，重复几何仍各有编号；R 是独立 lattic
 所有窗口都是 [start, end)。几何以有效位姿样本构造有界左端采样单元；TF 缺口、定位跳变和未知尾部不获得有效权重。
 
 速度在指令变化、指令失效和反馈时间点处分割。指令因果零阶保持，默认最长 200 ms；反馈仅在有效且间隔不超过 200 ms 的两点之间插值。左右端参考系、参考点和 epoch 必须相容。相同 header 时间的多条指令使用记录交付时间区分，缺少证据或同时交付冲突值时排除。
+
+速度 header 校验按话题和 record epoch 独立进行，只与最后可信 header 比较。header-record 绝对差超过 clock_domain_tolerance、header 回退超过 clock_reset_tolerance，或相邻可信 header-record 差的突变超过 clock_reset_tolerance 时，拒绝该样本；被拒绝的 header 不成为后续校验基准。默认分别为 5 s 和 1 s，边界值允许。容差内的小回跳仍允许排序处理，稳定的 header 延迟不会被自动补偿。
+
+隔离区间从最后可信样本的时间开始，到第一个重新符合原时钟关系且位于边界之后的样本结束。正常样本本身仍 valid；坏样本作为 invalid 边界标记阻断该区间内的反馈插值和指令保持，不向前传播到更早的正常区间，也不向后传播到已恢复的区间。重复指令按交付时间展开时，隔离标记跟随前一可信指令的交付边界。无可信前缀时使用首个坏样本的 record 时间作为临时边界，恢复后保证标记不晚于首个可信样本。持续改变的 header 时钟不能仅因数值追上旧 header 而自动恢复；新 record epoch 独立校验。零 header 仍显式回退到 record 时间，但不为改变后的 header 时钟提供恢复证据。下游平滑命令始终按 record 时间，不受其保留 header 影响。TF 时钟策略不在此次局部隔离变更范围。
+
+坏样本的 header_ns、record_ns、send_ns 和 sequence 原样保留；其 ns 是隔离边界位置，不是经过修正的有效采样时间，stamp.valid=false、clock_domain=unverified。局部 clock_domain_unverified 诊断记录话题、首个坏 record 时间、区间起止、坏样本数及原始 header/record 范围；未恢复时明确标记 unrecovered。缺口仍计入候选时长和排除原因，不从 coverage 分母中消失。
 
 正式速度残差为 feedback - command，不平滑、不做自动时延平移。独立原始指令/反馈曲线可以继续显示，不能把残差配对缺失等同于原始两条曲线同时缺失。下游速度只作为另一条命令来源保存，不当作测量反馈。
 
@@ -60,7 +70,7 @@ settling_time 仅在明确配置 terminal_position_m 且存在同时满足静止
 
 `config/default.yaml` 的注释列明路径匹配、日志关联、时钟检查及最差 case 标记的默认值、单位、比较边界和有效范围。使用 `analyze --config FILE` 或 `inspect --config FILE` 覆盖；默认值保持原行为。数值计算的精度容差和直线路径 2 cm 筛选规则不在本次配置范围。
 
-所有生效值随 `analysis.json` 保存。`render` 使用已保存值；旧分析文件缺少新字段时使用历史默认值。网页删除 case 后的最差标记与自动黑星使用同一轮保存的限制值，不改变已有指标数值。时钟回退只有严格超过配置值才分隔 epoch 或使 header 链失效；容差内的小回跳继续保留现有排序处理，不推断为新时钟域。
+所有生效值随 `analysis.json` 保存。`render` 使用已保存值；旧分析文件缺少新字段时使用历史默认值。网页删除 case 后的最差标记与自动黑星使用同一轮保存的限制值，不改变已有指标数值。record/日志回退只有严格超过配置值才分隔 epoch；TF header 链仍使用既有失效规则。速度 header 采用上文的局部隔离规则；容差内的小回跳保留排序处理，不推断为新时钟域。
 
 
 ## 删除 case 后的报告统计
