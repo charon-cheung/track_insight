@@ -1,0 +1,7 @@
+.deps/
+docs/*
+COLCON_IGNORE
+.work/
+__pycache__/
+*.pyc
+reports/
