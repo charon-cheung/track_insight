@@ -1,0 +1,10 @@
+topics:
+  plan: /plan
+  command: /cmd_vel
+  feedback: /odom
+  tracking_raw: ""
+  downstream: ""
+frames:
+  world: map
+  base: base_footprint
+  command: base_footprint
